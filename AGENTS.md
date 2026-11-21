@@ -76,7 +76,12 @@ sequence number.
   working). k3s captures ports 80/443, so `deploy/coexist-k3s.sh` adds a
   Traefik TCP passthrough (kube-system objects named `opensuite-native`) to
   nginx on `10.42.0.1:9443/9080`. On a dedicated server none of that exists.
-- Deploy: `OS_OPERATORS=ada@office.demo.opensuite.online deploy/deploy.sh root@95.217.109.206 office.demo.opensuite.online file:/etc/opensuite/acme-email`
+- Deploy: `OS_OPERATORS=ada@office.demo.opensuite.online OS_SIGNUP=code OS_SIGNUP_CODE=<code> deploy/deploy.sh root@95.217.109.206 office.demo.opensuite.online file:/etc/opensuite/acme-email`
+  The settings are rewritten on every deploy, so pass all of them each time
+  (the current code is in `/etc/opensuite/opensuite.env` on the box).
+- Sign-up there is by invitation code on purpose: the box can deliver mail
+  directly, and open sign-up would let anyone send from its address. Do not
+  open it before outbound limits and abuse handling exist.
 - Test accounts: `ada` (owner and operator) and `grace.hopper`; passwords are
   in the handover notes, not in the repo.
 - Port 25 over IPv4 on that box still belongs to the old stack's mail pod, and
