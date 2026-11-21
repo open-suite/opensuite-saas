@@ -79,6 +79,11 @@ export function Menu({ trigger, items, align = 'left', class: cls }) {
   )
 }
 
+// keepFocus goes on a toolbar's mousedown: its buttons act on the text or
+// grid without taking the caret away from it, so typing can carry straight
+// on. Dropdowns and text fields still take focus as they must.
+export const keepFocus = (e) => e.target.closest('select, input') || e.preventDefault()
+
 // Popover: an icon button that opens a small panel (colour pickers).
 export function Popover({ icon, label, children }) {
   const [open, setOpen] = useState(false)

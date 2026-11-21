@@ -184,7 +184,7 @@ function Domains({ data, setData }) {
   return (
     <>
       <p class="muted" style={{ marginBottom: 14, maxWidth: 640 }}>
-        Use your own domain for the suite's address, for email, or both. Add it here, publish the DNS records shown, then check. A domain works as soon as its records are live.
+        Use your own domain for the suite's address, for email, or both. Add it here, publish the DNS records shown, then check. A domain works as soon as its records are live. Once email is live, two signing records (DKIM) are added to the list: publish those too so other providers trust your mail.
       </p>
       <form class="row" style={{ marginBottom: 18 }} onSubmit={add}>
         <input class="input" style={{ maxWidth: 320 }} placeholder="example.com" value={name} onInput={(e) => setName(e.target.value)} />

@@ -77,14 +77,22 @@ function report(label, samples, budget = BUDGET) {
     const sheetHref = await page.getAttribute('a.list-row[href^="/s/"]', 'href')
     const docs = []
     const sheets = []
-    for (let i = 0; i < 7; i++) {
+    const parts = []
+    const docParts = []
+    for (let i = 0; i < 13; i++) {
       await click('a[href="/docs"]', `document.querySelector('.page-head')`)
       await page.waitForTimeout(300)
       docs.push(await click(`a[href="${docHref}"]`, `document.querySelector('.paper')?.textContent.trim().length > 0`))
+      docParts.push(await page.evaluate(() => window.__docTiming))
       await click('a[href="/docs"]', `document.querySelector('.page-head')`)
       await page.waitForTimeout(300)
       sheets.push(await click(`a[href="${sheetHref}"]`, `!!document.querySelector('.toolbar .select') && document.querySelector('.formula-bar .ref')?.textContent === 'A1'`))
+      parts.push(await page.evaluate(() => window.__sheetTiming))
     }
+    const part = (k) => med(parts.map((p) => p[k])).toFixed(0)
+    const dpart = (k) => med(docParts.map((p) => p[k])).toFixed(0)
+    console.log(`info  inside a document open: load state ${dpart('state')} ms, build editor ${dpart('editor')} ms`)
+    console.log(`info  inside a spreadsheet open: load model ${part('model')} ms, lay out ${part('layout')} ms, paint ${part('paint')} ms`)
     console.log(`info  first open in this session: document ${docs[0].toFixed(0)} ms, spreadsheet ${sheets[0].toFixed(0)} ms`)
     report('open a document, content on screen', docs.slice(1))
     report('open a spreadsheet, ready to type', sheets.slice(1))

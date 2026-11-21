@@ -143,6 +143,7 @@ export class Sheet {
 
   start(cached) {
     const { wrap, scroll } = this
+    const t0 = performance.now()
     let since = 0
     if (cached?.bytes) {
       try {
@@ -152,7 +153,9 @@ export class Sheet {
       } catch {}
     }
     if (!this.model) this.model = blank(this.title)
+    const t1 = performance.now()
     this.afterLoad()
+    const t2 = performance.now()
 
     this.ro = new ResizeObserver(() => this.resize())
     this.ro.observe(wrap)
@@ -169,6 +172,9 @@ export class Sheet {
     this.readTheme()
     this.resize()
     if (!document.activeElement || document.activeElement === document.body) wrap.focus()
+    // Where opening a sheet spends its time, for tests/perf.cjs.
+    this.timing = { model: t1 - t0, layout: t2 - t1, paint: performance.now() - t2 }
+    window.__sheetTiming = this.timing
 
     this.sock = new DocSocket(this.id, {
       hello: (peer, canEdit) => {

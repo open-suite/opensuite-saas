@@ -29,7 +29,7 @@ import { api, refreshBoot } from '../lib/api.js'
 import { DocSocket, fetchState } from '../lib/sync.js'
 import { findDoc, renameDoc, trashDoc, convert, whenCreated } from '../lib/docs.js'
 import { colorFor, debounce, download, pickFile } from '../lib/util.js'
-import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkColors, markColors } from '../ui.jsx'
+import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkColors, markColors, keepFocus } from '../ui.jsx'
 import { ShareDialog } from './docs.jsx'
 
 const REMOTE = 'remote'
@@ -137,6 +137,7 @@ export async function prewarm() {
 
 // Open a document: local copy first, then the live connection.
 function openDocument(id, element, me, onChange) {
+  const t0 = performance.now()
   const ydoc = new Y.Doc()
   const local = new IndexeddbPersistence('os-doc-' + id, ydoc)
   // Applied before the store has opened, so it is shown now and not written
@@ -146,6 +147,7 @@ function openDocument(id, element, me, onChange) {
   const color = colorFor(me.id)
   awareness.setLocalStateField('user', { name: me.name, color, id: me.id })
 
+  const t1 = performance.now()
   const editor = new Editor({
     element,
     extensions: extensionsFor(ydoc, awareness, { name: me.name, color }),
@@ -156,6 +158,8 @@ function openDocument(id, element, me, onChange) {
     },
     onTransaction: () => onChange(),
   })
+  // Where opening a document spends its time, for tests/perf.cjs.
+  window.__docTiming = { state: t1 - t0, editor: performance.now() - t1 }
 
   function insertFiles(files) {
     const images = files.filter((f) => f.type.startsWith('image/'))
@@ -294,7 +298,12 @@ function Toolbar({ editor }) {
   const c = () => editor.chain().focus()
   const on = (name, attrs) => editor.isActive(name, attrs)
   const block = on('heading', { level: 1 }) ? 'h1' : on('heading', { level: 2 }) ? 'h2' : on('heading', { level: 3 }) ? 'h3' : 'p'
-  const setBlock = (v) => (v === 'p' ? c().setParagraph().run() : c().setHeading({ level: +v[1] }).run())
+  const setBlock = (v) => {
+    if (v === 'p') editor.chain().setParagraph().run()
+    else editor.chain().setHeading({ level: +v[1] }).run()
+    // Straight back to the text, so the next keystroke lands there.
+    editor.view.focus()
+  }
   const addImage = async () => {
     const f = await pickFile('image/*')
     if (!f) return
@@ -306,7 +315,7 @@ function Toolbar({ editor }) {
   }
   const inTable = on('table')
   return (
-    <div class="toolbar" role="toolbar" aria-label="Formatting">
+    <div class="toolbar" role="toolbar" aria-label="Formatting" onMouseDown={keepFocus}>
       <IconButton icon={Undo2} label="Undo" disabled={!editor.can().undo()} onClick={() => c().undo().run()} />
       <IconButton icon={Redo2} label="Redo" disabled={!editor.can().redo()} onClick={() => c().redo().run()} />
       <span class="sep" />
@@ -370,7 +379,10 @@ export default function EditorView({ id }) {
   const doc = docs.value.find((d) => d.id === id)
   const host = useRef()
   const session = useRef(null)
-  const [, bump] = useState(0)
+  // `tick` changes whenever the editor does. It is handed to the toolbar as a
+  // prop because components here re-render on changed props, state or
+  // signals only, and the editor object itself never changes identity.
+  const [tick, bump] = useState(0)
   const [share, setShare] = useState(false)
   const me = user.value
 
@@ -447,7 +459,7 @@ export default function EditorView({ id }) {
           doc.role === 'owner' && { label: 'Move to trash', icon: Trash2, danger: true, onSelect: () => { trashDoc(doc); navigate('/docs') } },
         ]} />
       </div>
-      {editor && s.state.canEdit && doc.role !== 'view' && <Toolbar editor={editor} />}
+      {editor && s.state.canEdit && doc.role !== 'view' && <Toolbar editor={editor} tick={tick} />}
       <div class="doc-scroll" onMouseDown={(e) => e.target === e.currentTarget && editor?.commands.focus('end')}>
         <div ref={host} />
       </div>

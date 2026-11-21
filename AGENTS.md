@@ -86,6 +86,16 @@ sequence number.
 
 ## Gotchas already paid for
 
+- `@preact/signals` makes a component that has hook state or reads signals
+  re-render only when its props, state or signals change. A component that
+  reads a mutable object at render time (the editor, the sheet controller)
+  must be given a changing prop (`tick`) or it goes stale silently. The
+  editor toolbar did exactly that; `tests/e2e.cjs` now checks it.
+- Toolbars use `keepFocus` on mousedown so buttons never take the caret from
+  the document or grid; without it fast typing after a click loses keystrokes.
+- A cell edit begins on a key press but the cell editor takes focus one frame
+  later; `Sheet.onKey` handles keys in that gap. Do not remove that branch.
+
 - `apt-get install` on that box triggers needrestart, which restarted k3s.
   `install.sh` now sets `NEEDRESTART_SUSPEND=1`; keep it.
 - Let's Encrypt allows 5 failed validations per host per hour. Make sure

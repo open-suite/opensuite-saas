@@ -9,7 +9,7 @@ import { navigate } from '../lib/router.js'
 import { refreshBoot } from '../lib/api.js'
 import { renameDoc, trashDoc } from '../lib/docs.js'
 import { cx, debounce, download } from '../lib/util.js'
-import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkColors, markColors } from '../ui.jsx'
+import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkColors, markColors, keepFocus } from '../ui.jsx'
 import { ShareDialog } from './docs.jsx'
 import { Sheet, colName, prewarmSheets } from './sheet-core.js'
 
@@ -39,11 +39,11 @@ function Toolbar({ s }) {
   const cols = s.sel.c2 - s.sel.c1 + 1
   const border = (type) => s.act((m) => m.setAreaWithBorder(s.area(), { item: { style: 'thin', color: '#000000' }, type }))
   return (
-    <div class="toolbar" role="toolbar" aria-label="Formatting">
+    <div class="toolbar" role="toolbar" aria-label="Formatting" onMouseDown={keepFocus}>
       <IconButton icon={Undo2} label="Undo" disabled={!s.model.canUndo()} onClick={() => s.undo()} />
       <IconButton icon={Redo2} label="Redo" disabled={!s.model.canRedo()} onClick={() => s.redo()} />
       <span class="sep" />
-      <select class="select" aria-label="Number format" value={fmt} onChange={(e) => s.setStyle('num_fmt', e.target.value)}>
+      <select class="select" aria-label="Number format" value={fmt} onChange={(e) => { s.setStyle('num_fmt', e.target.value); s.wrap.focus() }}>
         {formats.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
         {fmt === 'other' && <option value="other">Custom</option>}
       </select>
@@ -99,7 +99,8 @@ export default function SheetView({ id }) {
   const cellInput = useRef()
   const barInput = useRef()
   const ctl = useRef(null)
-  const [, bump] = useState(0)
+  // `tick` changes whenever the sheet does; see the same note in editor.jsx.
+  const [tick, bump] = useState(0)
   const [share, setShare] = useState(false)
   const [renaming, setRenaming] = useState(null)
 
@@ -195,7 +196,7 @@ export default function SheetView({ id }) {
           doc.role === 'owner' && { label: 'Move to trash', icon: Trash2, danger: true, onSelect: () => { trashDoc(doc); navigate('/docs') } },
         ]} />
       </div>
-      {live && live.canEdit ? <Toolbar s={live} /> : <div class="toolbar" style={{ minHeight: 43 }} />}
+      {live && live.canEdit ? <Toolbar s={live} tick={tick} /> : <div class="toolbar" style={{ minHeight: 43 }} />}
       <div class="formula-bar">
         <div class="ref">{ref}</div>
         <span class="fx">fx</span>

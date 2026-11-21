@@ -24,6 +24,7 @@ const cell = (col, row) => ({ x: 46 + 90 * col - 45, y: 24 + 25 * row - 12 }) //
 ;(async () => {
   const b = await connect()
   const problems = []
+  const created = [] // API paths of everything this run makes
   const ok = (msg) => console.log('  ok  ' + msg)
   try {
     const A = await b.open()
@@ -63,9 +64,17 @@ const cell = (col, row) => ({ x: 46 + 90 * col - 45, y: 24 + 25 * row - 12 }) //
       await A.click('a[href="/"]')
       await A.click('text=New document')
       await A.waitForSelector('.paper')
+      created.push('/api/docs/' + A.url().split('/').pop())
       await A.fill('.doc-title', 'Launch plan')
       await A.click('.paper')
       await A.keyboard.type(`First line, ${tag}.`)
+      // The toolbar must follow the caret and the keyboard.
+      const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+      await A.keyboard.press(mod + '+b')
+      await A.waitForSelector('[aria-label="Bold"][aria-pressed="true"]', { timeout: 3000 })
+      await A.keyboard.press(mod + '+b')
+      await A.waitForSelector('[aria-label="Bold"][aria-pressed="false"]', { timeout: 3000 })
+      ok('document: toolbar reflects the editor state')
       await A.click('text=Share')
       await A.click('.modal >> text=Everyone at')
       await A.click('.modal >> text=Done')
@@ -85,6 +94,7 @@ const cell = (col, row) => ({ x: 46 + 90 * col - 45, y: 24 + 25 * row - 12 }) //
       await A.goto(BASE + '/docs')
       await A.click('text=New spreadsheet')
       await A.waitForSelector('.toolbar .select')
+      created.push('/api/docs/' + A.url().split('/').pop())
       await A.fill('.doc-title', 'Budget')
       await A.click('.grid-scroll', { position: cell(1, 1) })
       for (const v of ['Item', 'Laptops', 'Chairs', 'Total']) { await A.keyboard.type(v); await A.keyboard.press('Enter') }
@@ -156,6 +166,7 @@ const cell = (col, row) => ({ x: 46 + 90 * col - 45, y: 24 + 25 * row - 12 }) //
       await A.waitForSelector('.lobby')
       await A.click('text=Join now')
       await A.waitForSelector('.call-bar', { timeout: 15000 })
+      created.push('/api/meet/' + A.url().split('/').pop())
       await B.goto(A.url())
       await B.click('text=Join now')
       await B.waitForSelector('.call-bar', { timeout: 15000 })
@@ -171,6 +182,14 @@ const cell = (col, row) => ({ x: 46 + 90 * col - 45, y: 24 + 25 * row - 12 }) //
       await A.waitForFunction(() => [...document.querySelectorAll('.tile video')].filter((v) => v.videoWidth > 0).length === 3, null, { timeout: 20000 })
       ok('meet: video flows from all three')
     }
+
+    // Leave the account as it was found: remove what this run created.
+    await A.goto(BASE + '/')
+    await A.waitForSelector('.rail')
+    await A.evaluate(async (made) => {
+      for (const path of made) await fetch(path, { method: 'DELETE' })
+    }, created)
+    ok(`cleaned up ${created.length} test item(s)`)
 
     if (problems.length) throw new Error('problems during the run:\n' + problems.join('\n'))
     console.log('all good')
