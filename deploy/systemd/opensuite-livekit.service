@@ -1,0 +1,20 @@
+[Unit]
+Description=Open Suite video engine (LiveKit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=opensuite
+Group=opensuite
+ExecStart=/usr/local/bin/livekit-server --config /etc/opensuite/livekit.yaml
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65536
+SyslogIdentifier=opensuite-video
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+.sheet-view { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.formula-bar { display: flex; align-items: center; height: 32px; border-bottom: 1px solid var(--line); background: var(--bg); flex: none; }
+.formula-bar .ref { width: 86px; text-align: center; font: 600 12.5px var(--font); color: var(--ink-2); border-right: 1px solid var(--line); line-height: 32px; flex: none; }
+.formula-bar .fx { padding: 0 10px; color: var(--faint); font: italic 600 13px Georgia, serif; flex: none; }
+.formula-bar input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; font-size: 13.5px; }
+.grid-wrap { flex: 1; min-height: 0; position: relative; outline: none; overflow: hidden; }
+.grid-wrap canvas { position: absolute; left: 0; top: 0; }
+.grid-scroll { position: absolute; inset: 0; overflow: auto; cursor: cell; touch-action: pan-x pan-y; }
+.cell-editor {
+  position: absolute; z-index: 3; box-sizing: border-box; border: 2px solid var(--accent); border-radius: 0; outline: 0;
+  padding: 0 4px; font: 13px var(--font); background: var(--bg); color: var(--ink); box-shadow: var(--shadow-1);
+}
+.sheet-tabs { display: flex; align-items: center; gap: 2px; height: 36px; padding: 0 8px; border-top: 1px solid var(--line); background: var(--canvas); flex: none; overflow-x: auto; }
+.sheet-tab { height: 28px; padding: 0 13px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.sheet-tab:hover { background: var(--sunken); color: var(--ink); }
+.sheet-tab.on { background: var(--bg); color: var(--accent); box-shadow: var(--shadow-1); }

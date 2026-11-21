@@ -1,0 +1,64 @@
+.mail { flex: 1; min-height: 0; display: grid; grid-template-columns: 216px minmax(300px, 380px) minmax(0, 1fr); }
+.mail-side { padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; overflow: auto; border-right: 1px solid var(--line); }
+.mail-side .btn-primary { margin: 0 4px 12px; height: 40px; }
+.folder { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 8px; color: var(--ink-2); border: 0; background: transparent; width: 100%; text-align: left; font-weight: 500; }
+.folder:hover { background: var(--sunken); }
+.folder.on { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+.folder .n { margin-left: auto; font-size: 12px; font-weight: 650; }
+
+.mail-list { display: flex; flex-direction: column; min-height: 0; background: var(--bg); border-right: 1px solid var(--line); }
+.mail-search { padding: 10px; border-bottom: 1px solid var(--line); position: relative; }
+.mail-search svg { position: absolute; left: 21px; top: 21px; color: var(--faint); }
+.mail-search .input { padding-left: 34px; background: var(--canvas); border-color: transparent; }
+.mail-rows { flex: 1; overflow: auto; }
+.mrow { display: block; width: 100%; text-align: left; padding: 10px 14px 10px 22px; border: 0; border-bottom: 1px solid var(--line); background: transparent; position: relative; }
+.mrow:hover { background: var(--canvas); }
+.mrow.on { background: var(--accent-soft); }
+.mrow.unread::before { content: ""; position: absolute; left: 8px; top: 17px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.mrow .top { display: flex; align-items: baseline; gap: 8px; }
+.mrow .who { flex: 1; min-width: 0; font-weight: 500; }
+.mrow.unread .who, .mrow.unread .subj { font-weight: 700; }
+.mrow .date { font-size: 12px; color: var(--muted); flex: none; }
+.mrow .subj { font-size: 13.5px; }
+.mrow .prev { font-size: 12.5px; color: var(--muted); }
+.mrow .marks { display: inline-flex; gap: 5px; align-items: center; color: var(--faint); margin-left: 6px; }
+.mrow .star { color: var(--warn); }
+.more-row { padding: 12px; text-align: center; }
+
+.mail-read { min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.read-bar { display: flex; align-items: center; gap: 2px; height: 48px; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--bg); flex: none; }
+.read-scroll { flex: 1; overflow: auto; padding: 22px 28px 40px; }
+.read-scroll h1 { font-size: 20px; margin-bottom: 16px; }
+.msg { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); margin-bottom: 12px; overflow: hidden; }
+.msg-head { display: flex; gap: 12px; padding: 13px 16px; align-items: flex-start; }
+.msg-head.fold { cursor: pointer; }
+.msg-head .meta { flex: 1; min-width: 0; }
+.msg-head .from { font-weight: 650; }
+.msg-head .to { font-size: 12.5px; color: var(--muted); }
+.msg-head .date { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.msg-body { padding: 0 16px 14px; }
+.msg-body iframe { width: 100%; border: 0; display: block; background: #fff; border-radius: 6px; }
+.msg-note { display: flex; align-items: center; gap: 10px; margin: 0 16px 12px; padding: 7px 11px; border-radius: 8px; background: var(--sunken); font-size: 12.5px; color: var(--muted); }
+.atts { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 14px; }
+
+.compose { position: fixed; right: 24px; bottom: 0; z-index: 60; width: 580px; max-width: calc(100vw - 32px); height: min(620px, calc(100vh - 60px)); display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-bottom: 0; border-radius: 12px 12px 0 0; box-shadow: var(--shadow-2); }
+.compose > header { display: flex; align-items: center; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--line); font-weight: 650; }
+.compose .line { display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--line); min-height: 40px; }
+.compose .line label { color: var(--muted); width: 52px; flex: none; font-size: 13px; }
+.compose .line input { flex: 1; border: 0; outline: 0; background: transparent; height: 38px; min-width: 0; }
+.compose .line button { border: 0; background: transparent; color: var(--muted); font-size: 12.5px; }
+.compose-body { flex: 1; overflow: auto; padding: 14px 16px; outline: none; line-height: 1.55; }
+.compose-body blockquote { margin: 8px 0 0; padding-left: 12px; border-left: 3px solid var(--line-strong); color: var(--muted); }
+.compose > footer { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); }
+
+@media (max-width: 1000px) {
+  .mail { grid-template-columns: 64px minmax(260px, 340px) minmax(0, 1fr); }
+  .mail-side .label, .mail-side .n { display: none; }
+  .mail-side .btn-primary span { display: none; }
+}
+@media (max-width: 760px) {
+  .mail { grid-template-columns: 1fr; }
+  .mail-side { display: none; }
+  .mail.reading .mail-list { display: none; }
+  .mail:not(.reading) .mail-read { display: none; }
+}

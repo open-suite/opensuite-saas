@@ -1,0 +1,24 @@
+[Unit]
+Description=Open Suite
+After=network-online.target tuwunel.service opensuite-mail.service opensuite-livekit.service
+Wants=network-online.target
+
+[Service]
+User=opensuite
+Group=opensuite
+SupplementaryGroups=opensuite-certs
+UMask=0027
+EnvironmentFile=/etc/opensuite/opensuite.env
+EnvironmentFile=/etc/opensuite/secrets.env
+ExecStart=/opt/opensuite/bin/opensuite
+Restart=on-failure
+RestartSec=2
+LimitNOFILE=65536
+SyslogIdentifier=opensuite
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

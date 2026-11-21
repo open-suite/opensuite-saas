@@ -1,0 +1,26 @@
+[Unit]
+Description=Open Suite mail engine (Stalwart)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=stalwart
+Group=stalwart
+SupplementaryGroups=opensuite-certs
+EnvironmentFile=/etc/stalwart/stalwart.env
+ExecStart=/usr/local/bin/stalwart --config=/etc/stalwart/config.json
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+LimitNOFILE=65536
+KillMode=process
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=5
+SyslogIdentifier=opensuite-mail
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+node_modules/
+web/dist/
+build/
+server/data/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+tests/.state.json
