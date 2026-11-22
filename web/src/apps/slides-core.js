@@ -943,6 +943,12 @@ export class Deck {
 
   // --- whole deck as data (export, presenting) ------------------------------
 
+  // plainText is the deck as words only, slide by slide with its notes: what
+  // a search index wants.
+  plainText() {
+    return this.order().map((id) => [...this.els(id).filter((e) => e.type === 'box').map((e) => textPlain(e.text)), this.notes(id)].filter(Boolean).join('\n')).filter(Boolean).join('\n\n')
+  }
+
   toJSON() {
     return { theme: this.themeId(), transition: this.meta.get('transition') || 'fade', slides: this.order().map((id) => ({ id, ...slideJSON(this.slides.get(id)) })) }
   }
@@ -953,5 +959,3 @@ function nodeText(n) {
   if (n.type === 'text') return n.text || ''
   return (n.content || []).map(nodeText).join(n.type === 'paragraph' ? '' : '\n')
 }
-
-export { textPlain, H }

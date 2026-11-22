@@ -74,7 +74,10 @@ export const slideVars = (theme, colors) =>
   `--s-ink:${colors.ink};--s-muted:${colors.muted};--s-accent:${colors.accent};--s-line:${colors.line};color:${colors.ink};font-family:${fonts[theme.font].css};`
 
 // resolve turns a stored colour (a theme name or a literal) into a literal.
-export const resolve = (colors, v) => (!v || v === 'none' ? null : tokens.includes(v) ? colors[v] : v)
+// Anything that is not a plain colour is dropped: these values come from the
+// shared document and end up inside style attributes.
+export const resolve = (colors, v) => (tokens.includes(v) ? colors[v] : /^#[0-9a-f]{3,8}$/i.test(v || '') ? v : null)
+const num = (v) => +v || 0
 
 // Decoration a layout draws behind its content.
 export function decor(layout, colors) {
@@ -214,7 +217,7 @@ const vertical = { top: 'flex-start', middle: 'center', bottom: 'flex-end' }
 export const isShape = (el) => !!el.shape && el.shape !== 'none'
 
 export function frameCss(el) {
-  return `left:${el.x}px;top:${el.y}px;width:${el.w}px;${isShape(el) ? 'height' : 'min-height'}:${el.h}px;` + (el.rot ? `transform:rotate(${el.rot}deg);` : '')
+  return `left:${num(el.x)}px;top:${num(el.y)}px;width:${num(el.w)}px;${isShape(el) ? 'height' : 'min-height'}:${num(el.h)}px;` + (num(el.rot) ? `transform:rotate(${num(el.rot)}deg);` : '')
 }
 
 export function textColor(el, layout, colors) {
@@ -235,7 +238,7 @@ export function textCss(el, layout, colors) {
 
 export function shapeCss(el, colors) {
   const fill = resolve(colors, el.fill), stroke = resolve(colors, el.stroke)
-  return `background:${fill || 'transparent'};` + (stroke && el.sw !== 0 ? `border:${el.sw || 2}px solid ${stroke};` : '') +
+  return `background:${fill || 'transparent'};` + (stroke && el.sw !== 0 ? `border:${num(el.sw) || 2}px solid ${stroke};` : '') +
     (el.shape === 'round' ? 'border-radius:20px;' : el.shape === 'ellipse' ? 'border-radius:50%;' : '')
 }
 
