@@ -66,8 +66,10 @@ id opensuite >/dev/null 2>&1 || useradd --system --home "$DATA" --shell /usr/sbi
 getent group opensuite-certs >/dev/null || groupadd --system opensuite-certs
 usermod -aG opensuite-certs opensuite
 usermod -aG opensuite-certs www-data
-mkdir -p "$ETC" "$OPT/bin" "$OPT/web" "$DATA/certs" "$DATA/blobs"
-chown opensuite:opensuite "$DATA/blobs"
+mkdir -p "$ETC" "$OPT/bin" "$OPT/web" "$DATA/certs" "$DATA/blobs" "$DATA/files"
+chown opensuite:opensuite "$DATA/blobs" "$DATA/files"
+# Uploaded files are read and written by the app alone.
+chmod 0750 "$DATA/files"
 # Certificates are written by the app and read by nginx and the mail engine.
 chown opensuite:opensuite-certs "$DATA" "$DATA/certs"
 chmod 0751 "$DATA"
