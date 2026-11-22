@@ -20,7 +20,7 @@ type Doc struct {
 	Title   string  `json:"title"`
 	Access  string  `json:"access"` // private | org
 	Owner   string  `json:"owner"`
-	Role    string  `json:"role"` // owner | edit | view
+	Role    string  `json:"role"` // owner | edit | comment | view
 	Created int64   `json:"created"`
 	Updated int64   `json:"updated"`
 	Trashed int64   `json:"trashed,omitempty"`
@@ -77,6 +77,8 @@ func roleOf(u *User, owner, access, share string) string {
 		return "owner"
 	case share == "edit" || access == "org":
 		return "edit"
+	case share == "comment":
+		return "comment"
 	case share == "view":
 		return "view"
 	}
@@ -94,6 +96,19 @@ func (s *Server) docRole(u *User, id string) (role, kind string) {
 		return "", ""
 	}
 	return roleOf(u, owner, access, share), kind
+}
+
+// canEdit: may change the content, its title and its history.
+func canEdit(role string) bool { return role == "owner" || role == "edit" }
+
+// canWrite: may send updates on the live connection. A commenter's comments
+// and suggestions live inside a text document's own state, so a commenter
+// writes too; the app keeps a commenter out of the text itself. The server
+// never parses documents and cannot tell the two apart, so "comment" is a
+// courtesy between colleagues, not a security boundary. Spreadsheets have no
+// comments, so there a commenter only reads.
+func canWrite(role, kind string) bool {
+	return canEdit(role) || (role == "comment" && kind == "doc")
 }
 
 func (s *Server) handleDocList(w http.ResponseWriter, r *http.Request, u *User) { ok(w, s.docList(u)) }
@@ -133,7 +148,7 @@ func (s *Server) handleDocCreate(w http.ResponseWriter, r *http.Request, u *User
 func (s *Server) handleDocUpdate(w http.ResponseWriter, r *http.Request, u *User) {
 	id := r.PathValue("id")
 	role, _ := s.docRole(u, id)
-	if role == "" || role == "view" {
+	if !canEdit(role) {
 		fail(w, 403, "You can't change this document.")
 		return
 	}
@@ -171,7 +186,7 @@ func (s *Server) handleDocUpdate(w http.ResponseWriter, r *http.Request, u *User
 			if err == nil {
 				tx.Exec(`DELETE FROM doc_shares WHERE doc_id = ?`, id)
 				for _, sh := range *in.Shares {
-					if sh.Role != "view" {
+					if sh.Role != "view" && sh.Role != "comment" {
 						sh.Role = "edit"
 					}
 					// Only people in the same organisation can be added.
@@ -193,6 +208,8 @@ func (s *Server) handleDocDelete(w http.ResponseWriter, r *http.Request, u *User
 	}
 	s.w.Exec(`DELETE FROM docs WHERE id = ?`, id)
 	s.w.Exec(`DELETE FROM doc_updates WHERE doc_id = ?`, id)
+	s.w.Exec(`DELETE FROM doc_versions WHERE doc_id = ?`, id)
+	s.w.Exec(`DELETE FROM doc_editors WHERE doc_id = ?`, id)
 	ok(w, map[string]bool{"ok": true})
 }
 
@@ -225,15 +242,23 @@ type Hub struct {
 
 type room struct {
 	id     string
+	holds  int // callers between Hub.room and Hub.release; guarded by Hub.mu
 	mu     sync.Mutex
 	seq    int64
 	peers  map[*peer]struct{}
 	recent map[[8]byte]int64
 	order  [][8]byte
+
+	// Version history bookkeeping (versions.go).
+	updated int64               // when the last update was stored
+	verAt   int64               // when the newest version was taken
+	verSeq  int64               // the sequence the newest version covers
+	editors map[string]struct{} // who has edited since then
 }
 
 type peer struct {
 	id   uint64
+	user string
 	out  chan []byte
 	conn *websocket.Conn
 	edit bool
@@ -241,14 +266,20 @@ type peer struct {
 
 func newHub(s *Server) *Hub { return &Hub{s: s, rooms: map[string]*room{}} }
 
+// room returns the one live room for a document. Every call is paired with
+// release, and the room is kept until the last holder lets go, so two callers
+// can never end up with separate rooms (and sequence counters) for one
+// document.
 func (h *Hub) room(id string) *room {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if rm := h.rooms[id]; rm != nil {
+		rm.holds++
 		return rm
 	}
-	rm := &room{id: id, peers: map[*peer]struct{}{}, recent: map[[8]byte]int64{}}
-	h.s.r.QueryRow(`SELECT seq FROM docs WHERE id = ?`, id).Scan(&rm.seq)
+	rm := &room{id: id, holds: 1, peers: map[*peer]struct{}{}, recent: map[[8]byte]int64{}}
+	h.s.r.QueryRow(`SELECT seq, updated, created FROM docs WHERE id = ?`, id).Scan(&rm.seq, &rm.updated, &rm.verAt)
+	h.s.loadVersionState(rm)
 	h.rooms[id] = rm
 	return rm
 }
@@ -256,9 +287,7 @@ func (h *Hub) room(id string) *room {
 func (h *Hub) release(rm *room) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	rm.mu.Lock()
-	defer rm.mu.Unlock()
-	if len(rm.peers) == 0 {
+	if rm.holds--; rm.holds == 0 {
 		delete(h.rooms, rm.id)
 	}
 }
@@ -290,7 +319,7 @@ func (p *peer) send(msg []byte) {
 
 func (s *Server) handleDocSync(w http.ResponseWriter, r *http.Request, u *User) {
 	id := r.PathValue("id")
-	role, _ := s.docRole(u, id)
+	role, kind := s.docRole(u, id)
 	if role == "" {
 		fail(w, 403, "no access")
 		return
@@ -305,7 +334,7 @@ func (s *Server) handleDocSync(w http.ResponseWriter, r *http.Request, u *User) 
 	ctx := r.Context()
 
 	rm := s.hub.room(id)
-	p := &peer{id: s.hub.ids.Add(1), out: make(chan []byte, 512), conn: conn, edit: role != "view"}
+	p := &peer{id: s.hub.ids.Add(1), user: u.ID, out: make(chan []byte, 512), conn: conn, edit: canWrite(role, kind)}
 
 	// Collect the backlog and join the room atomically so no update falls in
 	// the gap between "read history" and "receive live".
@@ -461,18 +490,24 @@ func (s *Server) applyUpdate(rm *room, from *peer, payload []byte) {
 		from.send(append(varint([]byte{msgAck}, uint64(seq)), op[:]...))
 		return
 	}
+	t := now()
+	// The state as it stood before this edit is kept as a version when the
+	// edit opens a new sitting, or a long one has run on.
+	s.autoVersion(rm, t)
 	seq := rm.seq + 1
 	tx, err := s.w.Begin()
 	if err != nil {
 		return
 	}
 	_, e1 := tx.Exec(`INSERT INTO doc_updates(doc_id, seq, data) VALUES(?,?,?)`, rm.id, seq, payload)
-	_, e2 := tx.Exec(`UPDATE docs SET seq = ?, updated = ? WHERE id = ?`, seq, now(), rm.id)
+	_, e2 := tx.Exec(`UPDATE docs SET seq = ?, updated = ? WHERE id = ?`, seq, t, rm.id)
 	if e1 != nil || e2 != nil || tx.Commit() != nil {
 		tx.Rollback()
 		return
 	}
 	rm.seq = seq
+	rm.updated = t
+	s.noteEditor(rm, from.user, t)
 	rm.recent[op] = seq
 	rm.order = append(rm.order, op)
 	if len(rm.order) > 4096 {
