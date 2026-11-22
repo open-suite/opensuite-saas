@@ -370,10 +370,19 @@ export function EventEditor() {
   const d = draft.value
   const [f, setF] = useState(null)
   const [custom, setCustom] = useState(false)
+  const [allZones, setAllZones] = useState(false)
   const titleRef = useRef()
   useLayoutEffect(() => {
     setF(d ? formOf(d.ev) : null)
     setCustom(false)
+    setAllZones(false)
+  }, [d])
+  // The list of several hundred time zones is filled in a moment after the
+  // form is on screen, so it never delays the form itself.
+  useEffect(() => {
+    if (!d) return
+    const t = setTimeout(() => setAllZones(true), 250)
+    return () => clearTimeout(t)
   }, [d])
   // Before the form is painted, so the first keystroke lands in the title.
   useLayoutEffect(() => {
@@ -444,7 +453,9 @@ export function EventEditor() {
               <label class="check"><input type="checkbox" checked={f.allDay} onChange={on('allDay')} disabled={one} /> All day</label>
               {!f.allDay && !one && (
                 <label class="zone" title="Time zone"><Globe size={14} />
-                  <select class="select" value={f.tz} onChange={on('tz')} aria-label="Time zone">{(zones.includes(f.tz) ? zones : [f.tz, ...zones]).map((z) => <option key={z} value={z}>{zoneLabel(z)}</option>)}</select>
+                  <select class="select" value={f.tz} onChange={on('tz')} onFocus={() => setAllZones(true)} aria-label="Time zone">
+                    {(!allZones ? [f.tz] : zones.includes(f.tz) ? zones : [f.tz, ...zones]).map((z) => <option key={z} value={z}>{zoneLabel(z)}</option>)}
+                  </select>
                 </label>
               )}
             </div>

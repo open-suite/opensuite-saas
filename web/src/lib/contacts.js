@@ -131,11 +131,13 @@ export function syncContacts() {
   return syncing
 }
 
+const savedCopy = kvGet('contacts') // read while the page is still starting
+
 let started = false
 export async function startContacts() {
   if (started || !boot.value?.mail?.ready) return
   started = true
-  const saved = await kvGet('contacts')
+  const saved = await savedCopy
   if (saved?.user === boot.value.mail.address) {
     cards.value = saved.cards || []
     bookId = saved.bookId || null

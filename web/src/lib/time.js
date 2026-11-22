@@ -134,7 +134,10 @@ export const hhmm = (ms) => fTime.format(ms)
 export const dayShort = (ms) => fDay.format(ms)
 export const dayLong = (ms) => fDayLong.format(ms)
 export const monthTitle = (ms) => fMonth.format(ms)
-export const weekdayName = (ms, width = 'short') => new Date(ms).toLocaleDateString(undefined, { weekday: width })
+const fWeekday = { short: f({ weekday: 'short' }), narrow: f({ weekday: 'narrow' }), long: f({ weekday: 'long' }) }
+export const weekdayName = (ms, width = 'short') => fWeekday[width].format(ms)
+const fMonthDay = f({ weekday: 'short', month: 'short' })
+export const weekdayMonth = (ms) => fMonthDay.format(ms)
 
 // span describes when an event happens, for popovers, mail and the agenda.
 export function span(start, end, allDay) {

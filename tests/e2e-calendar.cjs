@@ -186,8 +186,23 @@ function collect(page, name, problems) {
     await A.waitForSelector(`.ag-row:has-text("Errand ${tag}")`, { state: 'detached' })
     ok('calendars: add one, put an event in it, hide and show it, delete it')
 
-    // --- a repeating event ------------------------------------------------------------
+    // --- an event in another time zone ----------------------------------------------------
     const tomorrow = new Date(now.getTime() + 86400000)
+    const here = await A.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
+    const there = here === 'America/New_York' ? 'Asia/Tokyo' : 'America/New_York'
+    await editor(A, { title: 'Abroad ' + tag, date: ymd(tomorrow), from: '09:00', to: '10:00' })
+    await A.waitForFunction(() => document.querySelectorAll('[aria-label="Time zone"] option').length > 50)
+    await A.selectOption('[aria-label="Time zone"]', there)
+    await saveEditor(A)
+    await A.click(`.ag-row:has-text("Abroad ${tag}")`)
+    const abroad = await A.textContent('.ev-card')
+    if (!new RegExp('0?9[:.]00.* in ' + there.replace('_', ' ')).test(abroad)) throw new Error('time zone note missing: ' + abroad)
+    const shown = await A.textContent(`.ag-row:has-text("Abroad ${tag}") .time`)
+    if (/^0?9[:.]00/.test(shown.trim())) throw new Error('event in another zone is shown at its own clock time: ' + shown)
+    await A.keyboard.press('Escape')
+    ok('time zones: an event keeps its own zone and shows in local time')
+
+    // --- a repeating event ------------------------------------------------------------
     const standup = 'Standup ' + tag
     await editor(A, { title: standup, date: ymd(tomorrow), from: '09:00', to: '09:15' })
     await A.selectOption('[aria-label="Repeat"]', 'daily')

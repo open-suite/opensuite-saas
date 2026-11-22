@@ -130,11 +130,15 @@ export function syncCalendar() {
   return syncing
 }
 
+// The device copy is read while the page is still starting, so the calendar
+// has its events by the time it is first drawn.
+const savedCopy = kvGet('calendar')
+
 let started = false
 export async function startCalendar() {
   if (started || !boot.value?.mail?.ready) return
   started = true
-  const saved = await kvGet('calendar')
+  const saved = await savedCopy
   if (saved?.user === boot.value.mail.address) {
     calendars.value = saved.calendars || []
     events.value = saved.events || {}

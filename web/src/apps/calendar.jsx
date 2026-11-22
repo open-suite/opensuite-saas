@@ -14,7 +14,7 @@ import {
 } from '../lib/calendar.js'
 import {
   DAY, MIN, localZone, addDays, addMonths, startOfDay, startOfWeek, startOfMonth, sameDay, hhmm, monthTitle, weekdayName, dayLong,
-  wallIn, formatWall, formatDuration, parseWall, instantOf, parseDuration,
+  wallIn, formatWall, formatDuration, parseWall, instantOf, parseDuration, weekdayMonth,
 } from '../lib/time.js'
 import { card, quick, draft, closeAll, scoped, join, EventCard, QuickCreate, EventEditor, ScopeDialog } from './calendar-event.jsx'
 
@@ -427,7 +427,7 @@ function Agenda({ from, to, occs }) {
         <section class="ag-day" key={d}>
           <button class={cx('ag-date', sameDay(d, now) && 'today')} onClick={() => { cursor.value = d; setView('day') }}>
             <span class="num">{new Date(d).getDate()}</span>
-            <span class="wd">{new Date(d).toLocaleDateString(undefined, { weekday: 'short', month: 'short' })}</span>
+            <span class="wd">{weekdayMonth(d)}</span>
           </button>
           <div class="ag-list">
             {list.map((o) => (
