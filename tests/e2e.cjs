@@ -91,8 +91,9 @@ const cell = (col, row) => ({ x: 46 + 90 * col - 45, y: 24 + 25 * row - 12 }) //
     }
 
     if (want('sheet')) {
-      await A.goto(BASE + '/docs')
-      await A.click('text=New spreadsheet')
+      await A.goto(BASE + '/files')
+      await A.click('.page-head button:has-text("New")')
+      await A.click('.menu >> text=New spreadsheet')
       await A.waitForSelector('.toolbar .select')
       created.push('/api/docs/' + A.url().split('/').pop())
       await A.fill('.doc-title', 'Budget')

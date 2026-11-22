@@ -45,7 +45,7 @@ function report(label, samples, budget = BUDGET) {
 
     const loads = []
     for (let i = 0; i < 12; i++) {
-      await page.goto(BASE + ['/', '/mail', '/docs', '/chat'][i % 4])
+      await page.goto(BASE + ['/', '/mail', '/files', '/chat'][i % 4])
       await page.waitForSelector('.rail')
       loads.push(await page.evaluate(() => performance.getEntriesByName('os:painted')[0].startTime))
       await page.waitForTimeout(250)
@@ -66,13 +66,13 @@ function report(label, samples, budget = BUDGET) {
     await page.waitForTimeout(5000)
     const hops = []
     for (let i = 0; i < 5; i++) {
-      for (const [href, sel] of [['/mail', '.mail-list'], ['/chat', '.chat-side'], ['/meet', '.meet-hero'], ['/docs', '.page-head'], ['/', '.quick']]) {
+      for (const [href, sel] of [['/mail', '.mail-list'], ['/chat', '.chat-side'], ['/meet', '.meet-hero'], ['/files', '.page-head'], ['/', '.quick']]) {
         hops.push(await click(`a[href="${href}"]`, `document.querySelector('${sel}')`))
       }
     }
     report('switching sections', hops)
 
-    await click('a[href="/docs"]', `document.querySelector('.page-head')`)
+    await click('a[href="/files"]', `document.querySelector('.page-head')`)
     const docHref = await page.getAttribute('a.list-row[href^="/d/"]', 'href')
     const sheetHref = await page.getAttribute('a.list-row[href^="/s/"]', 'href')
     const docs = []
@@ -80,11 +80,11 @@ function report(label, samples, budget = BUDGET) {
     const parts = []
     const docParts = []
     for (let i = 0; i < 13; i++) {
-      await click('a[href="/docs"]', `document.querySelector('.page-head')`)
+      await click('a[href="/files"]', `document.querySelector('.page-head')`)
       await page.waitForTimeout(300)
       docs.push(await click(`a[href="${docHref}"]`, `document.querySelector('.paper')?.textContent.trim().length > 0`))
       docParts.push(await page.evaluate(() => window.__docTiming))
-      await click('a[href="/docs"]', `document.querySelector('.page-head')`)
+      await click('a[href="/files"]', `document.querySelector('.page-head')`)
       await page.waitForTimeout(300)
       sheets.push(await click(`a[href="${sheetHref}"]`, `!!document.querySelector('.toolbar .select') && document.querySelector('.formula-bar .ref')?.textContent === 'A1'`))
       parts.push(await page.evaluate(() => window.__sheetTiming))
