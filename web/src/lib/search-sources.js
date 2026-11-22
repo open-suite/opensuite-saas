@@ -1,7 +1,8 @@
 // The built-in search sources: people, documents and spreadsheets, mail,
 // chat and meetings. Each one is a provider as described in lib/search.js;
 // a new part of the suite adds its own with addProvider in the same way.
-import { Users, FileText, Table2, Mail as MailIcon, MessageSquare, Video, PenSquare } from 'lucide-preact'
+import { Users, FileText, Table2, Mail as MailIcon, MessageSquare, Video, PenSquare, Folder, File as FileIcon } from 'lucide-preact'
+import { items, folders, itemHref } from './files.js'
 import { boot, docs, people, peopleById, meetings, user, upsertDoc } from './store.js'
 import { docPath } from './docs.js'
 import { navigate } from './router.js'
@@ -69,6 +70,30 @@ addProvider({
       // One shared a moment ago is not in this device's list yet; the editor needs it there.
       before: () => docs.value.some((x) => x.id === d.id) || upsertDoc(d),
     }))
+  },
+})
+
+// --- files and folders ------------------------------------------------------------
+//
+// The drive keeps every folder and file this person can reach on the device,
+// so names are searched here and need no server call. Documents in the drive
+// are the source above.
+
+addProvider({
+  id: 'files',
+  label: 'Files',
+  order: 25,
+  icon: Folder,
+  local(q) {
+    const list = items.value.filter((i) => i.type !== 'doc' && !i.trashed && !i.uploading)
+    return rank(list, q, (i) => [i.name], (i) => i.updated).map(({ item: i, score }) => {
+      const owner = i.owner === user.value?.id ? 'You' : peopleById.value[i.owner]?.name
+      const where = folders.value[i.parent]?.name
+      return {
+        id: i.id, title: i.name, sub: [i.type === 'folder' ? 'Folder' : where && 'In ' + where, owner].filter(Boolean).join(' · '),
+        when: i.updated * 1000, href: itemHref(i), icon: i.type === 'folder' ? Folder : FileIcon, tone: 'doc', score,
+      }
+    })
   },
 })
 
