@@ -9,7 +9,7 @@ import { cx, copyText } from '../lib/util.js'
 import { Avatar, Button, IconButton, Modal } from '../ui.jsx'
 import {
   calendars, events, COLORS, colorOf, calendarOf, guestsOf, myPart, myAddress, isOrganizer, organizerOf, meetingLink, placeOf,
-  saveEvent, changeOccurrence, deleteOccurrence, rsvp, repeatText, occurrences, busyTimes, joinMeeting,
+  saveEvent, changeOccurrence, deleteOccurrence, rsvp, repeatText, occurrences, busyTimes, joinMeeting, notesOf,
 } from '../lib/calendar.js'
 import { suggest } from '../lib/contacts.js'
 import { DAY, MIN, localZone, parseWall, formatWall, instantOf, parseDuration, formatDuration, span, hhmm, zoneLabel, zones, startOfDay } from '../lib/time.js'
@@ -149,7 +149,7 @@ export function EventCard() {
           </div>
         </div>
       )}
-      {ev.description && <div class="ev-line"><AlignLeft size={16} /><div class="ev-desc">{ev.description}</div></div>}
+      {notesOf(ev) && <div class="ev-line"><AlignLeft size={16} /><div class="ev-desc">{notesOf(ev)}</div></div>}
       {calendars.value.length > 1 && cal && <div class="ev-line muted"><CalendarDays size={16} /><div>{cal.name}</div></div>}
       <Rsvp ev={occ.ev} />
     </Floating>

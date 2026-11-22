@@ -89,6 +89,7 @@ assert.match(flat, /RECURRENCE-ID;TZID=Europe\/Amsterdam:20261209T140000\r\nDTST
 assert.match(flat, /ORGANIZER;CN="Ada Lovelace":mailto:ada@office.test/)
 assert.match(flat, /ATTENDEE;CN="Grace Hopper";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:grace.hopper@office.test/)
 assert.match(flat, /SEQUENCE:2/)
+assert.match(flat, /CONFERENCE;VALUE=URI;FEATURE=VIDEO;LABEL="Open Suite meeting":https:\/\/office.test\/meet\/abc-defg-hij/)
 assert.doesNotMatch(ics, /stalwart/i)
 
 const back = parseICS(ics)

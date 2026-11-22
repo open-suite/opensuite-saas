@@ -150,6 +150,11 @@ function collect(page, name, problems) {
     // --- the organiser changes it -----------------------------------------------------
     await openCalendar(B, 'Agenda')
     await B.waitForSelector(`.ag-row:not(.pending):has-text("${plan}")`)
+    await B.click(`.ag-row:has-text("${plan}")`)
+    await B.waitForSelector('.ev-card >> text=Join meeting')
+    if (/Join: http/.test(await B.textContent('.ev-card'))) throw new Error("the guest's event shows the raw meeting link line")
+    await B.keyboard.press('Escape')
+    ok("guest: their copy of the event has the meeting's Join button")
     await A.click(`.ag-row:has-text("${plan}")`)
     await A.click('.ev-card [aria-label="Edit"]')
     await A.waitForSelector('.ev-form')

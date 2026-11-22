@@ -111,7 +111,7 @@ function eventLines(ev, { method, sequence, only, recurrenceId, master }) {
     const notes = [ev.description, link && 'Join: ' + link].filter(Boolean).join('\n\n')
     if (notes) l.push('DESCRIPTION:' + esc(notes))
     if (place || link) l.push('LOCATION:' + esc(place || link))
-    if (link) l.push('URL:' + link)
+    if (link) l.push('URL:' + link, 'CONFERENCE;VALUE=URI;FEATURE=VIDEO;LABEL="Open Suite meeting":' + link)
     if (ev.recurrenceRule && !recurrenceId) {
       l.push('RRULE:' + rruleText(ev.recurrenceRule, ev))
       for (const [rid, patch] of Object.entries(ev.recurrenceOverrides || {})) if (patch?.excluded) l.push(when('EXDATE', rid, ev))

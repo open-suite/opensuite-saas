@@ -183,14 +183,24 @@ export function isOrganizer(ev) {
   return org ? org === myAddress() : !!myPart(ev)?.owner
 }
 export const organizerOf = (ev) => guestsOf(ev).find((g) => g.owner) || { email: (ev.organizerCalendarAddress || '').replace(/^mailto:/i, ''), name: '' }
-export const meetingLink = (ev) => Object.values(ev.virtualLocations || {})[0]?.uri || ''
+// An invitation written elsewhere may carry its meeting link only as text;
+// links of the well-known kinds are recognised so the event still gets a
+// Join button.
+const MEETING = /https?:\/\/[^\s<>"]*(?:\/meet\/[a-z]{3}-[a-z]{4}-[a-z]{3}\b|meet\.google\.com\/|zoom\.us\/j\/|teams\.microsoft\.com\/l\/meetup-join|teams\.live\.com\/meet\/|whereby\.com\/|meet\.jit\.si\/)[^\s<>"]*/i
+export const meetingLink = (ev) => Object.values(ev.virtualLocations || {})[0]?.uri || ((Object.values(ev.locations || {})[0]?.name || '') + '\n' + (ev.description || '')).match(MEETING)?.[0] || ''
+// The description without the "Join:" line that invitations carry for
+// calendars which show nothing else.
+export const notesOf = (ev) => (ev.description || '').replace(/\n*Join: https?:\/\/\S+\s*$/, '').trim()
 // joinMeeting opens a meeting link: one of ours in place, any other in a tab.
 export function joinMeeting(link) {
   const here = location.origin + '/meet/'
   if (link.startsWith(here)) navigate('/meet/' + link.slice(here.length))
   else window.open(link, '_blank', 'noopener')
 }
-export const placeOf = (ev) => Object.values(ev.locations || {})[0]?.name || ''
+export function placeOf(ev) {
+  const name = Object.values(ev.locations || {})[0]?.name || ''
+  return /^https?:\/\/\S+$/.test(name) ? '' : name // a bare link is a meeting, not a place
+}
 
 // --- occurrences ----------------------------------------------------------
 
@@ -428,7 +438,7 @@ function mailBody(ev, lead) {
 <p style="margin:0 0 14px;color:#617385">${escapeHtml(lead)}</p>
 <div style="border:1px solid #e2e8ef;border-radius:12px;padding:18px 20px">
 <div style="font-size:18px;font-weight:650;margin-bottom:10px">${escapeHtml(title)}</div>
-<table style="border-collapse:collapse;font-size:14px">${rows.map(([k, v]) => `<tr><td style="padding:3px 14px 3px 0;color:#617385;vertical-align:top">${k}</td><td style="padding:3px 0">${cell(v)}</td></tr>`).join('')}</table>
+<table style="border-collapse:collapse;font-size:14px">${rows.map(([k, v]) => `<tr><td style="padding:3px 14px 3px 0;color:#617385;vertical-align:top;white-space:nowrap">${k}</td><td style="padding:3px 0">${cell(v)}</td></tr>`).join('')}</table>
 ${ev.description ? `<p style="margin:12px 0 0;white-space:pre-wrap">${escapeHtml(ev.description)}</p>` : ''}
 </div></div>`
   return { text, html }

@@ -1,5 +1,5 @@
 /* Calendar pieces that appear outside the calendar screen. */
-.agenda-time { width: 64px; flex: none; font-weight: 650; font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink-2); }
+.agenda-time { width: 78px; flex: none; white-space: nowrap; font-weight: 650; font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink-2); }
 .agenda-time i { width: 4px; height: 26px; border-radius: 2px; flex: none; }
 .agenda-card .btn { height: 30px; }
 .agenda-none { color: var(--muted); }

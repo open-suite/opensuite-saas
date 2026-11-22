@@ -207,8 +207,11 @@
   .bar, .chip { font-size: 11px; padding: 0 3px; gap: 3px; }
   .ag { padding: 4px 10px 24px; }
   .ag-day { grid-template-columns: 54px minmax(0, 1fr); }
-  .ag-row { flex-wrap: wrap; row-gap: 0; padding: 6px; }
-  .ag-row .time { width: auto; }
+  .ag-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; column-gap: 10px; row-gap: 0; padding: 6px; }
+  .ag-row .dot { grid-row: 1 / span 2; align-self: start; margin-top: 6px; }
+  .ag-row .time { grid-column: 2; width: auto; font-size: 12px; color: var(--muted); }
+  .ag-row .ttl { grid-column: 2; grid-row: 2; }
+  .ag-row .btn { grid-column: 3; grid-row: 1 / span 2; }
   .ag-row .place { display: none; }
   .ev-row { gap: 10px; }
   .ev-row .when .input { padding: 0 6px; }
