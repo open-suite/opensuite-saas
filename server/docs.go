@@ -16,7 +16,7 @@ import (
 
 type Doc struct {
 	ID      string  `json:"id"`
-	Kind    string  `json:"kind"` // doc | sheet
+	Kind    string  `json:"kind"` // doc | sheet | slides
 	Title   string  `json:"title"`
 	Access  string  `json:"access"` // private | org
 	Owner   string  `json:"owner"`
@@ -100,7 +100,7 @@ func (s *Server) handleDocList(w http.ResponseWriter, r *http.Request, u *User) 
 
 func (s *Server) handleDocCreate(w http.ResponseWriter, r *http.Request, u *User) {
 	var in struct{ ID, Kind, Title, Snapshot string }
-	if readJSON(r, &in) != nil || (in.Kind != "doc" && in.Kind != "sheet") {
+	if readJSON(r, &in) != nil || (in.Kind != "doc" && in.Kind != "sheet" && in.Kind != "slides") {
 		fail(w, 400, "bad request")
 		return
 	}
