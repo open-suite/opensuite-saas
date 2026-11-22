@@ -214,8 +214,20 @@ export async function startMail() {
       if (!key.startsWith('q:') && Date.now() - lists.value[key].at < 3600000) loadList(key).catch(() => {})
     }
   }, 400)
-  events.addEventListener('state', changed)
+  events.addEventListener('state', (e) => {
+    // One stream carries every kind of change; mail reacts to its own and
+    // hands the rest to whoever subscribed (calendar, contacts).
+    let types = {}
+    try {
+      types = Object.assign({}, ...Object.values(JSON.parse(e.data).changed || {}))
+    } catch {}
+    if (types.Email || types.Mailbox || !Object.keys(types).length) changed()
+    for (const fn of onPush) fn(types)
+  })
 }
+
+// onPush: functions called with the kinds of data that just changed.
+export const onPush = new Set()
 
 export function stopMail() {
   events?.close()

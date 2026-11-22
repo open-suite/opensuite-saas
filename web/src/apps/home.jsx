@@ -7,6 +7,7 @@ import { lists, emails, boxByRole } from '../lib/mail.js'
 import { when } from '../lib/util.js'
 import { Avatar, Empty } from '../ui.jsx'
 import { KindIcon } from './docs.jsx'
+import { AgendaCard } from './agenda.jsx'
 
 function greeting() {
   const h = new Date().getHours()
@@ -37,6 +38,7 @@ export function Home() {
           <a class="quick-btn" href="/mail?compose=1"><span class="kind-icon kind-doc"><PenSquare size={17} /></span>Write an email</a>
         </div>
         <div class="home-grid">
+          <AgendaCard />
           <section class="card wide">
             <div class="card-head"><h2>Recent documents</h2><a href="/files">All files</a></div>
             {recent.length === 0 ? <Empty icon={FileText} title="Nothing here yet" text="Documents and spreadsheets you open appear here." /> : recent.map((d) => (
