@@ -39,6 +39,7 @@ const viewNames = { mine: 'Files', shared: 'Shared with me', recent: 'Recent', t
 const viewHref = { mine: '/files', shared: '/files/shared', recent: '/files/recent', trash: '/files/trash' }
 const viewIcons = { mine: HardDrive, shared: Users, recent: Clock, trash: Trash2 }
 
+const PAGE = 120 // rows drawn at first in a long folder
 const PREFS = 'os:files:prefs'
 function loadPrefs() {
   try {
@@ -126,6 +127,20 @@ export function Drive() {
     return sorted(found, prefs, view === 'recent')
   }, [items.value, where, needle, prefs.sort, prefs.dir, !!folder])
   const chosen = rows.filter((i) => sel.has(i.key))
+
+  // A long folder is drawn a screenful at a time; more rows are added as the
+  // end of the list comes near, so opening it costs the same however big it is.
+  const windowKey = [where, needle, prefs.layout, prefs.sort, prefs.dir].join('|')
+  const [win, setWin] = useState({ key: windowKey, n: PAGE })
+  const limit = win.key === windowKey ? win.n : PAGE
+  const shown = useMemo(() => (rows.length > limit ? rows.slice(0, limit) : rows), [rows, limit])
+  const moreEl = useRef()
+  useEffect(() => {
+    if (!moreEl.current) return
+    const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setWin({ key: windowKey, n: limit + PAGE * 2 }), { rootMargin: '900px' })
+    io.observe(moreEl.current)
+    return () => io.disconnect()
+  }, [windowKey, limit, rows.length > limit])
 
   // --- selection ---
   const toggle = (key) => {
@@ -317,6 +332,24 @@ export function Drive() {
       {label}{prefs.sort === k && view !== 'recent' && (prefs.dir > 0 ? <ArrowUp size={13} /> : <ArrowDown size={13} />)}
     </button>
   )
+  // The list is rebuilt only when what it shows changes; opening a preview or
+  // a dialog over it leaves every row as it is.
+  const list = useMemo(() => prefs.layout === 'grid' ? (
+    <div class={cx('drive-grid', sel.size > 0 && 'selecting')} ref={listEl}>
+      {shown.map((i) => <Tile key={i.key} item={i} picked={sel.has(i.key)} drop={dropping === i.key} onPick={() => toggle(i.key)} onClick={(e) => onRowClick(e, i)} menu={menuFor(i)} drag={dragProps(i)} />)}
+    </div>
+  ) : (
+    <div class={cx('card drive-list', sel.size > 0 && 'selecting')} ref={listEl}>
+      <div class="drive-head">
+        <SortHead k="name" label="Name" cls="grow" />
+        <span class="drive-th c-owner">Owner</span>
+        <SortHead k="updated" label="Modified" cls="c-when" />
+        <SortHead k="size" label="Size" cls="c-size" />
+        <span class="c-menu" />
+      </div>
+      {shown.map((i) => <Row key={i.key} item={i} me={me} picked={sel.has(i.key)} drop={dropping === i.key} onPick={() => toggle(i.key)} onClick={(e) => onRowClick(e, i)} menu={menuFor(i)} drag={dragProps(i)} />)}
+    </div>
+  ), [shown, sel, dropping, prefs.layout, prefs.sort, prefs.dir, view])
   const shareTarget = dialog?.type === 'share' ? itemByKey.value[dialog.key] : null
   const empty = !rows.length && (filesLoaded.value || view === 'trash')
   const missing = view === 'folder' && !folder && filesLoaded.value
@@ -347,16 +380,23 @@ export function Drive() {
                 <>
                   <a href={crumbs[0] && crumbs[0].owner !== me ? '/files/shared' : '/files'} class={cx(dropping === 'crumb:' && 'drop')} {...targetProps('crumb:', '', 'owner')}>{crumbs[0] && crumbs[0].owner !== me ? 'Shared with me' : 'Files'}</a>
                   {crumbs.map((c, i) => (
-                    <>
-                      <ChevronRight size={16} class="sep" />
-                      {i === crumbs.length - 1 ? <span class="ellipsis">{c.name}</span> : <a href={'/files/folder/' + c.id} class={cx('ellipsis', dropping === 'crumb:' + c.id && 'drop')} {...targetProps('crumb:' + c.id, c.id, c.role)}>{c.name}</a>}
-                    </>
+                    // Deep inside, the middle of the path folds into one "…".
+                    crumbs.length > 3 && i < crumbs.length - 3 ? null : (
+                      <>
+                        <ChevronRight size={16} class="sep" />
+                        {i === crumbs.length - 1 ? <span class="ellipsis">{c.name}</span> : (
+                          <a href={'/files/folder/' + c.id} title={c.name} class={cx('ellipsis', dropping === 'crumb:' + c.id && 'drop')} {...targetProps('crumb:' + c.id, c.id, c.role)}>
+                            {crumbs.length > 3 && i === crumbs.length - 3 ? '…' : c.name}
+                          </a>
+                        )}
+                      </>
+                    )
                   ))}
                 </>
               ) : title}
             </h1>
             {view === 'folder' && folder && <IconButton icon={Share2} label="Share this folder" onClick={() => setDialog({ type: 'share', key: 'n:' + folder.id })} />}
-            {canAdd && <Button icon={Upload} onClick={() => uploadInput.current.click()}>Upload</Button>}
+            {canAdd && <Button icon={Upload} class="upload-btn" onClick={() => uploadInput.current.click()}>Upload</Button>}
             {canAdd && <Menu align="right" trigger={<Button kind="primary" icon={Plus}>New</Button>} items={newItems} />}
             <input ref={uploadInput} type="file" multiple hidden onChange={pickUpload} />
             <input ref={folderInput} type="file" webkitdirectory="" hidden onChange={pickUpload} />
@@ -373,15 +413,15 @@ export function Drive() {
               <span class="grow" />
               {view === 'trash' ? (
                 <>
-                  <Button icon={RotateCcw} onClick={() => { chosen.forEach((i) => trashItem(i, false)); setSel(new Set()) }}>Restore</Button>
+                  <Button icon={RotateCcw} onClick={() => { chosen.forEach((i) => trashItem(i, false)); setSel(new Set()) }} aria-label="Restore"><span class="wide-only">Restore</span></Button>
                   <Button kind="danger" icon={Trash2} onClick={() => setDialog({ type: 'delete', items: chosen })}>Delete for ever</Button>
                 </>
               ) : (
                 <>
-                  {chosen.some((i) => i.type === 'file') && <Button icon={Download} onClick={() => download(chosen)}>Download</Button>}
-                  {chosen.every((i) => i.role !== 'view') && <Button icon={FolderInput} onClick={() => setDialog({ type: 'move', items: chosen })}>Move</Button>}
-                  {chosen.length === 1 && <Button icon={Share2} onClick={() => setDialog({ type: 'share', key: chosen[0].key })}>Share</Button>}
-                  {chosen.some((i) => i.role === 'owner') && <Button kind="danger" icon={Trash2} onClick={() => trash(chosen)}>Move to trash</Button>}
+                  {chosen.some((i) => i.type === 'file') && <Button icon={Download} onClick={() => download(chosen)} aria-label="Download"><span class="wide-only">Download</span></Button>}
+                  {chosen.every((i) => i.role !== 'view') && <Button icon={FolderInput} onClick={() => setDialog({ type: 'move', items: chosen })} aria-label="Move"><span class="wide-only">Move</span></Button>}
+                  {chosen.length === 1 && <Button icon={Share2} onClick={() => setDialog({ type: 'share', key: chosen[0].key })} aria-label="Share"><span class="wide-only">Share</span></Button>}
+                  {chosen.some((i) => i.role === 'owner') && <Button kind="danger" icon={Trash2} onClick={() => trash(chosen)} aria-label="Move to trash"><span class="wide-only">Move to trash</span></Button>}
                 </>
               )}
             </div>
@@ -408,22 +448,8 @@ export function Drive() {
                 text={needle ? '' : view === 'trash' ? 'Items in the trash are deleted for ever after 30 days.' : view === 'shared' ? 'Files, folders and documents that colleagues share with you appear here.' : canAdd ? 'Drop files anywhere on this page to upload them, or create a document.' : ''}
               />
             </div>
-          ) : prefs.layout === 'grid' ? (
-            <div class={cx('drive-grid', sel.size > 0 && 'selecting')} ref={listEl}>
-              {rows.map((i) => <Tile key={i.key} item={i} picked={sel.has(i.key)} drop={dropping === i.key} onPick={() => toggle(i.key)} onClick={(e) => onRowClick(e, i)} menu={menuFor(i)} drag={dragProps(i)} />)}
-            </div>
-          ) : (
-            <div class={cx('card drive-list', sel.size > 0 && 'selecting')} ref={listEl}>
-              <div class="drive-head">
-                <SortHead k="name" label="Name" cls="grow" />
-                <span class="drive-th c-owner">Owner</span>
-                <SortHead k="updated" label="Modified" cls="c-when" />
-                <SortHead k="size" label="Size" cls="c-size" />
-                <span class="c-menu" />
-              </div>
-              {rows.map((i) => <Row key={i.key} item={i} me={me} picked={sel.has(i.key)} drop={dropping === i.key} onPick={() => toggle(i.key)} onClick={(e) => onRowClick(e, i)} menu={menuFor(i)} drag={dragProps(i)} />)}
-            </div>
-          )}
+          ) : list}
+          {rows.length > limit && <div class="drive-more" ref={moreEl} />}
         </div>
         {dropping === 'here' && <div class="drop-hint"><Upload size={16} /> Drop to upload to {view === 'folder' ? `"${folder?.name}"` : 'My files'}</div>}
       </section>
@@ -484,7 +510,7 @@ function Row({ item, me, picked, drop, onPick, onClick, menu, drag }) {
       <ItemIcon item={item} />
       <span class="grow ellipsis name">{item.name}</span>
       {isShared(item) && <Users size={15} class="muted" aria-label="Shared" />}
-      <span class="muted ellipsis c-owner">{item.owner === me ? 'You' : owner?.name}</span>
+      {!item.uploading && <span class="muted ellipsis c-owner">{item.owner === me ? 'You' : owner?.name}</span>}
       {item.uploading ? <span class="c-when c-up"><Progress item={item} /></span> : <span class="muted c-when" title={whenFull(item.updated * 1000)}>{when(item.updated * 1000)}</span>}
       <span class="muted c-size">{item.type === 'file' ? bytes(item.size) : item.type === 'doc' ? docKinds[item.kind]?.name || '' : ''}</span>
       <RowMenu item={item} menu={menu} />
@@ -606,10 +632,15 @@ export function FilePicker() {
 
 // --- preview ---------------------------------------------------------------
 
-const frameCss = `html{color-scheme:light dark}body{margin:0;padding:28px 32px;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#102033;background:#fff;overflow-wrap:anywhere;max-width:820px;margin:0 auto}
-a{color:#1269e8}pre{background:#f6f8fa;padding:12px 14px;border-radius:8px;overflow:auto;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}code{font:0.92em ui-monospace,Menlo,Consolas,monospace;background:#eef2f6;padding:1px 4px;border-radius:4px}pre code{background:none;padding:0}
-blockquote{margin:12px 0;padding-left:14px;border-left:3px solid #cbd5e0;color:#617385}hr{border:0;border-top:1px solid #e2e8ef;margin:20px 0}h1,h2,h3{line-height:1.25}
-@media (prefers-color-scheme:dark){body{color:#e6edf5;background:#131c26}a{color:#4d94f7}pre{background:#0d141c}code{background:#0a1017}blockquote{border-color:#34465a;color:#93a4b6}hr{border-color:#243140}}`
+// The rendered Markdown lives in its own script-less frame, which cannot see
+// the app's design tokens, so it is handed their current values.
+function frameCss() {
+  const css = getComputedStyle(document.documentElement)
+  const v = (name) => css.getPropertyValue(name).trim()
+  return `html{color-scheme:${v('color-scheme') || 'light'}}body{margin:0 auto;padding:28px 32px;max-width:820px;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:${v('--ink')};background:${v('--bg')};overflow-wrap:anywhere}
+a{color:${v('--accent')}}pre{background:${v('--canvas')};padding:12px 14px;border-radius:8px;overflow:auto;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}code{font:0.92em ui-monospace,Menlo,Consolas,monospace;background:${v('--sunken')};padding:1px 4px;border-radius:4px}pre code{background:none;padding:0}
+blockquote{margin:12px 0;padding-left:14px;border-left:3px solid ${v('--line-strong')};color:${v('--muted')}}hr{border:0;border-top:1px solid ${v('--line')};margin:20px 0}h1,h2,h3{line-height:1.25}`
+}
 
 // PreviewBody shows one file. src is where its content comes from, so the
 // same view serves the drive and a public link.
@@ -631,7 +662,7 @@ export function PreviewBody({ item, src, download }) {
     if (text === null) return <div class="preview-stage" />
     const cut = item.size > text.length * 4 && item.size > 1 << 20
     if (type === 'markdown') {
-      const page = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>${frameCss}</style></head><body>${markdownToHtml(text)}</body></html>`
+      const page = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>${frameCss()}</style></head><body>${markdownToHtml(text)}</body></html>`
       return <iframe class="preview-frame" title={item.name} sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={page} />
     }
     return <div class="preview-scroll"><pre class="preview-text">{text}{cut ? '\n\n… the rest of this file is not shown. Download it to see everything.' : ''}</pre></div>

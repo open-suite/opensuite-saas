@@ -16,12 +16,15 @@
 .crumbs { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .crumbs a, .crumbs > span { color: inherit; padding: 2px 6px; margin: 0 -2px; border-radius: 7px; border: 1px solid transparent; min-width: 0; }
 .crumbs a { color: var(--muted); flex: 0 1 auto; }
+.crumbs a:first-child { flex: none; }
+.crumbs > span { flex: 0 1 auto; }
 .crumbs a:hover { color: var(--ink); background: var(--sunken); text-decoration: none; }
 .crumbs .sep { color: var(--faint); flex: none; }
 
 .drive-bar { display: flex; align-items: center; gap: 8px; min-height: 36px; margin-bottom: 12px; }
 .drive-bar.selbar { padding: 0 6px 0 2px; border-radius: var(--radius); background: var(--accent-soft); }
 .drive-bar.selbar .btn { height: 30px; }
+.drive-bar.selbar b { white-space: nowrap; }
 .drive-filter { position: relative; width: 260px; max-width: 100%; }
 .drive-filter svg { position: absolute; left: 10px; top: 10px; color: var(--faint); }
 .drive-filter .input { padding-left: 32px; }
@@ -35,9 +38,10 @@ button.drive-th:not(:disabled):hover, .drive-th.on { color: var(--ink); }
 .c-when { width: 96px; flex: none; text-align: right; justify-content: flex-end; }
 .c-size { width: 84px; flex: none; text-align: right; justify-content: flex-end; white-space: nowrap; }
 .c-menu { width: 32px; flex: none; display: inline-flex; }
-.c-up { width: 180px; }
+.c-up { width: 258px; } /* an upload's progress spans the owner and modified columns */
 
 .drive-row { position: relative; border: 0; border-bottom: 1px solid var(--line); background: transparent; width: 100%; text-align: left; outline-offset: -2px; user-select: none; }
+.drive-row:last-child { border-bottom: 0; border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 .drive-row .name, .ftile .name { font-weight: 550; }
 .drive-row.picked, .ftile.picked, .list-row.picked { background: var(--accent-soft); }
 .drive-row.drop, .ftile.drop, .drive-place.drop, .crumbs a.drop { background: var(--accent-soft); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -47,7 +51,7 @@ button.drive-th:not(:disabled):hover, .drive-th.on { color: var(--ink); }
 @media (hover: none) { .pick { opacity: 1; } }
 
 .kind-folder { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
-.kind-file { background: var(--sunken); color: var(--ink-2); }
+.kind-file { background: color-mix(in srgb, var(--muted) 15%, transparent); color: var(--ink-2); }
 .kind-file-img { background: color-mix(in srgb, #7c3aed 14%, transparent); color: #7c3aed; }
 .kind-file-media { background: color-mix(in srgb, #be185d 13%, transparent); color: #be185d; }
 .kind-file-pdf { background: var(--danger-soft); color: var(--danger); }
@@ -75,6 +79,7 @@ button.drive-th:not(:disabled):hover, .drive-th.on { color: var(--ink); }
 .ftile-foot .name, .ftile-foot .sub { display: block; }
 .ftile-foot .sub { color: var(--muted); font-size: 12px; }
 
+.drive-more { height: 1px; }
 .drive.dropping .drive-main::after { content: ''; position: absolute; inset: 8px; border: 2px dashed var(--accent); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--accent) 6%, transparent); pointer-events: none; }
 .drop-hint { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 20px; background: var(--accent); color: var(--accent-ink); font-weight: 600; box-shadow: var(--shadow-2); pointer-events: none; z-index: 5; white-space: nowrap; }
 
@@ -113,6 +118,7 @@ button.drive-th:not(:disabled):hover, .drive-th.on { color: var(--ink); }
 
 @media (max-width: 860px) {
   .c-owner { display: none; }
+  .c-up { width: 150px; }
 }
 @media (max-width: 760px) {
   .drive-side { display: none; }
@@ -127,7 +133,10 @@ button.drive-th:not(:disabled):hover, .drive-th.on { color: var(--ink); }
   .c-when { width: auto; }
   .c-up { width: 110px; }
   .drive-filter { width: 100%; flex: 1; }
-  .page-head .btn { padding: 0 11px; }
+  .drive-bar:not(.selbar) > .grow { display: none; }
+  .drive-bar.selbar .btn { padding: 0 10px; }
+  .drive-main .page-head { gap: 8px; }
+  .drive-main .page-head .upload-btn { display: none; } /* "Upload files" is in the New menu */
   .drive-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
   .ftile-art { height: 96px; }
   .preview-stage, .preview-scroll { padding: 10px; }
