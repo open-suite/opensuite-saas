@@ -239,6 +239,24 @@ export class Sheet {
         this.onChange()
       },
     }, since, whenCreated(this.id))
+    // Search: the socket sends these words to the server's index (lib/sync.js).
+    this.sock.text = () => {
+      const m = this.model
+      const lines = []
+      let size = 0
+      m.getWorksheetsProperties().forEach((ws, s) => {
+        lines.push(ws.name)
+        const rows = new Set()
+        for (let c = 1; c <= 60; c++) for (const r of m.getRowsWithData(s, c)) rows.add(r)
+        for (const r of [...rows].sort((a, b) => a - b)) {
+          if (size > 400000) return
+          const line = [...m.getColumnsWithData(s, r)].sort((a, b) => a - b).map((c) => m.getFormattedCellValue(s, r, c)).filter(Boolean).join(' ')
+          size += line.length
+          if (line) lines.push(line)
+        }
+      })
+      return lines.join('\n')
+    }
   }
 
   close() {

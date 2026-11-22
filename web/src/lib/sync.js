@@ -4,6 +4,7 @@
 // recognises its own updates when they come back.
 
 const UPDATE = 1, AWARENESS = 2, SNAPSHOT = 3, SYNCED = 4, ACK = 5, BASE = 6, LEAVE = 7, HELLO = 8, TITLE = 9
+const TEXT = 10 // the document's plain text, for the server's search index
 
 function writeVarint(n) {
   const out = []
@@ -63,6 +64,8 @@ export class DocSocket {
     ready.then(() => this.connect())
     this.onOnline = () => this.ws?.readyState > 1 && this.connect()
     addEventListener('online', this.onOnline)
+    this.onHide = () => this.sendText() // a tab closed mid-thought still gets indexed
+    addEventListener('pagehide', this.onHide)
   }
 
   connect() {
@@ -106,6 +109,7 @@ export class DocSocket {
       this.retry = 0
       // Anything written while offline, or sent but never confirmed.
       for (const frame of this.pending.values()) this.ws.send(frame)
+      if (this.textStale || this.textDirty) this.textSoon(1500)
       this.h.synced?.(seq)
       this.h.status?.(true)
     } else if (type === AWARENESS) {
@@ -116,6 +120,8 @@ export class DocSocket {
     } else if (type === HELLO) {
       const [peer, p] = readVarint(m, 1)
       this.peer = peer
+      this.canEdit = m[p] === 1
+      this.textStale = m[p + 1] === 0
       this.h.hello?.(peer, m[p] === 1)
     } else if (type === TITLE) {
       this.h.title?.(new TextDecoder().decode(m.subarray(1)))
@@ -135,6 +141,38 @@ export class DocSocket {
     frame.set(bytes, 9)
     this.pending.set(hex(op), frame)
     if (this.online) this.ws.send(frame)
+    this.textSoon()
+  }
+
+  // Search. The server cannot read a document, so an editor sets `text` to a
+  // function returning the document as plain text; a few seconds after the
+  // last change (and when the server says its copy is out of date) that text
+  // is sent for the index. Only someone who may edit is listened to.
+  textSoon(ms = 4000) {
+    if (!this.text || this.canEdit === false || this.closed) return
+    this.textDirty = true
+    clearTimeout(this.textTimer)
+    this.textTimer = setTimeout(() => this.sendText(), ms)
+  }
+
+  sendText() {
+    clearTimeout(this.textTimer)
+    if (!this.textDirty || !this.online || !this.text) return
+    let text
+    try {
+      text = this.text()
+    } catch {}
+    if (typeof text !== 'string') return
+    text = text.slice(0, 400000)
+    const same = text === this.textSent && !this.textStale
+    this.textDirty = this.textStale = false
+    if (same) return // formatting changed, the words did not
+    this.textSent = text
+    const bytes = new TextEncoder().encode(text)
+    const frame = new Uint8Array(1 + bytes.length)
+    frame[0] = TEXT
+    frame.set(bytes, 1)
+    this.ws.send(frame)
   }
 
   sendAwareness(bytes) {
@@ -156,9 +194,11 @@ export class DocSocket {
   }
 
   close() {
+    this.sendText()
     this.closed = true
     clearTimeout(this.timer)
     removeEventListener('online', this.onOnline)
+    removeEventListener('pagehide', this.onHide)
     this.ws?.close()
   }
 }
