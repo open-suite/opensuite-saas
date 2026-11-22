@@ -26,6 +26,7 @@ import { Account } from './apps/account.jsx'
 const heavy = {
   editor: () => import('./apps/editor.jsx'),
   sheet: () => import('./apps/sheet.jsx'),
+  slides: () => import('./apps/slides.jsx'),
   room: () => import('./apps/room.jsx'),
 }
 const loaded = signal({})
@@ -108,7 +109,7 @@ function App() {
   }
   if (u.mustChange) return <><SetPassword /><Toasts /></>
 
-  const section = { d: 'docs', s: 'docs', account: '' }[p[0]] ?? (p[0] || 'home')
+  const section = { d: 'docs', s: 'docs', p: 'docs', account: '' }[p[0]] ?? (p[0] || 'home')
   let view
   switch (p[0]) {
     case undefined: view = <Home />; break
@@ -118,6 +119,7 @@ function App() {
     case 'docs': view = <Docs />; break
     case 'd': view = <Heavy name="editor" id={p[1]} key={p[1]} />; break
     case 's': view = <Heavy name="sheet" id={p[1]} key={p[1]} />; break
+    case 'p': view = <Heavy name="slides" id={p[1]} key={p[1]} />; break
     case 'admin': view = isAdmin.value ? <Admin /> : <Home />; break
     case 'account': view = <Account />; break
     default: view = <Home />

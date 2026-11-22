@@ -1,0 +1,191 @@
+/* Presentations. A slide is drawn at 1280 × 720 and scaled with a transform
+   wherever it appears: stage, thumbnail, slide show, printed page. */
+
+/* --- a slide and what is on it ------------------------------------------ */
+.sl-scaled { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; }
+.sl-slide { position: absolute; inset: 0; width: 1280px; height: 720px; overflow: hidden; font-size: 24px; line-height: 1.35; -webkit-font-smoothing: antialiased; }
+.sl-decor { position: absolute; }
+.sl-el { position: absolute; box-sizing: border-box; }
+.sl-box, .sl-edit-host { display: flex; flex-direction: column; }
+.sl-shape { position: absolute; inset: 0; box-sizing: border-box; }
+.sl-box-text { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; box-sizing: border-box; }
+.sl-text { outline: none; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; min-width: 0; }
+.sl-text p { margin: 0; }
+.sl-text > * + * { margin-top: 0.38em; }
+.sl-text ul, .sl-text ol { margin-bottom: 0; padding-left: 1.2em; }
+.sl-text li > p { margin: 0; }
+.sl-text li + li, .sl-text li > ul, .sl-text li > ol { margin-top: 0.22em; }
+.sl-text li::marker { color: var(--s-accent); }
+.sl-text a { color: var(--s-accent); text-decoration: underline; }
+.sl-text p:empty::after { content: "\200b"; }
+.sl-hint { color: var(--s-muted); opacity: 0.75; }
+.sl-img { overflow: hidden; }
+.sl-img img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sl-mode-edit .sl-img.empty { border: 2px dashed var(--s-line); border-radius: 14px; display: grid; place-items: center; color: var(--s-muted); }
+.sl-img-hint { display: flex; flex-direction: column; align-items: center; gap: 12px; font-size: 20px; font-weight: 500; }
+.sl-line { overflow: visible; pointer-events: none; }
+.sl-line-hit { pointer-events: stroke; }
+.sl-line g { pointer-events: all; }
+.sl-caret { position: relative; margin-left: -1px; margin-right: -1px; border-left: 2px solid; pointer-events: none; word-break: normal; }
+.sl-caret > span { position: absolute; top: -1.5em; left: -2px; padding: 1px 6px; border-radius: 5px 5px 5px 0; color: #fff; font: 600 12px/1.5 var(--font); letter-spacing: 0; white-space: nowrap; user-select: none; }
+
+/* --- editor frame --------------------------------------------------------- */
+.sl-view { position: relative; }
+.sl-body { flex: 1; min-height: 0; display: flex; }
+.sl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sl-present { display: inline-flex; }
+.sl-present > .btn { border-radius: var(--radius) 0 0 var(--radius); }
+.sl-present .sl-present-more { border-radius: 0 var(--radius) var(--radius) 0; border-left: 0; padding: 0 7px; }
+.sl-present .menu { min-width: 230px; }
+
+.sl-toolbar .sl-tool.btn { height: 32px; padding: 0 8px; gap: 5px; border-radius: 7px; color: var(--ink-2); }
+.sl-toolbar .sl-tool.btn.on, .sl-toolbar .sl-tool.btn:hover { background: var(--sunken); color: var(--ink); }
+.sl-toolbar .icon-btn.sl-tool { position: relative; }
+.sl-toolbar .icon-btn.sl-tool:has(.sl-chip) svg { transform: translateY(-2px); }
+.sl-chip { position: absolute; left: 7px; right: 7px; bottom: 4px; height: 4px; border-radius: 2px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 22%, transparent); }
+.sl-panel { min-width: 0; padding: 6px; }
+.sl-colors { width: 174px; }
+.sl-colors .menu-head { padding: 4px 6px 0; }
+.sl-weights { display: flex; gap: 4px; padding: 2px 4px; }
+.sl-weight { flex: 1; height: 30px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; }
+.sl-weight:hover { background: var(--sunken); }
+.sl-weight.on { background: var(--accent-soft); }
+.sl-weight i { display: block; width: 26px; border-radius: 2px; background: var(--ink); }
+.sl-themes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; width: 306px; padding: 2px; }
+.sl-theme { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px 6px; border: 0; border-radius: 8px; background: transparent; font-size: 12px; font-weight: 550; color: var(--ink-2); }
+.sl-theme:hover { background: var(--sunken); }
+.sl-theme-card { position: relative; width: 84px; height: 48px; border: 1px solid; border-radius: 6px; display: grid; place-items: center; font-size: 19px; }
+.sl-theme-card i { position: absolute; left: 9px; top: 9px; width: 18px; height: 4px; border-radius: 2px; }
+.sl-theme.on .sl-theme-card { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sl-context { position: fixed; z-index: 120; }
+
+/* --- slide strip ---------------------------------------------------------- */
+.sl-strip { width: 196px; flex: none; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 12px 18px 4px; background: var(--bg); border-right: 1px solid var(--line); outline: none; user-select: none; }
+.sl-thumb { position: relative; display: flex; align-items: flex-start; gap: 7px; flex: none; cursor: default; touch-action: pan-y; }
+.sl-num { width: 22px; flex: none; padding-top: 2px; text-align: right; font-size: 11.5px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sl-thumb-frame { --k: 0.1171875; position: relative; width: 150px; height: 84.375px; flex: none; overflow: hidden; border-radius: 5px; background: #fff; box-shadow: 0 0 0 1px var(--line-strong); contain: strict; }
+.sl-thumb-scale { width: 1280px; height: 720px; transform: scale(var(--k)); transform-origin: 0 0; pointer-events: none; position: relative; }
+.sl-thumb:hover .sl-thumb-frame { box-shadow: 0 0 0 1px var(--faint); }
+.sl-thumb.on .sl-thumb-frame { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 50%, var(--bg)); }
+.sl-thumb.cur .sl-thumb-frame { box-shadow: 0 0 0 2px var(--accent); }
+.sl-thumb.cur .sl-num { color: var(--accent); }
+.sl-thumb.drop-before::before, .sl-thumb.drop-after::after { content: ""; position: absolute; left: 29px; right: 0; height: 3px; border-radius: 2px; background: var(--accent); }
+.sl-thumb.drop-before::before { top: -7px; }
+.sl-thumb.drop-after::after { bottom: -7px; }
+.sl-thumb-peers { position: absolute; right: 5px; bottom: 5px; display: flex; gap: 3px; }
+.sl-thumb-peers i { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px #fff; }
+.sl-add { margin-left: 29px; width: 150px; height: 34px; flex: none; display: grid; place-items: center; border: 1px dashed var(--line-strong); border-radius: 6px; background: transparent; color: var(--muted); }
+.sl-add:hover { border-color: var(--accent); color: var(--accent); }
+
+/* --- stage ---------------------------------------------------------------- */
+.sl-area { flex: 1; min-height: 0; position: relative; display: grid; place-items: center; overflow: hidden; background: var(--canvas); outline: none; touch-action: none; user-select: none; -webkit-user-select: none; }
+.sl-canvas { position: relative; flex: none; background: #fff; box-shadow: 0 0 0 1px var(--line), var(--shadow-1); }
+.sl-mode-edit .sl-el { cursor: default; }
+.sl-view:not(.readonly) .sl-mode-edit .sl-box, .sl-view:not(.readonly) .sl-mode-edit .sl-img, .sl-view:not(.readonly) .sl-mode-edit .sl-line [data-el] { cursor: move; }
+.sl-view:not(.readonly) .sl-mode-edit .sl-img.empty { cursor: pointer; }
+.sl-edit-host { position: absolute; z-index: 5; box-sizing: border-box; transform-origin: center; }
+.sl-edit-host[hidden] { display: none; }
+.sl-edit-host .sl-text { cursor: text; user-select: text; -webkit-user-select: text; flex: none; }
+.sl-overlay { position: absolute; inset: 0; pointer-events: none; }
+.sl-frame { position: absolute; box-sizing: border-box; border: 1.5px solid var(--accent); }
+.sl-frame.thin { border-width: 1px; }
+.sl-frame.editing { border-style: dashed; }
+.sl-frame.group { border: 1px dashed var(--accent); }
+.sl-frame.sl-peer { border-width: 2px; }
+.sl-peer > span { position: absolute; left: -2px; bottom: 100%; padding: 1px 6px; border-radius: 5px 5px 5px 0; color: #fff; font: 600 11px/1.5 var(--font); white-space: nowrap; }
+.sl-h { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; box-sizing: border-box; border: 1.5px solid var(--accent); border-radius: 2px; background: #fff; pointer-events: auto; }
+.sl-h::before { content: ""; position: absolute; inset: -7px; }
+.sl-h-nw { left: 0; top: 0; cursor: nwse-resize; }
+.sl-h-n { left: 50%; top: 0; cursor: ns-resize; }
+.sl-h-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.sl-h-e { left: 100%; top: 50%; cursor: ew-resize; }
+.sl-h-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.sl-h-s { left: 50%; top: 100%; cursor: ns-resize; }
+.sl-h-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.sl-h-w { left: 0; top: 50%; cursor: ew-resize; }
+.sl-h-rot { left: 50%; top: -24px; border-radius: 50%; cursor: grab; }
+.sl-h-rot::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1.5px; height: 13px; margin-left: -0.75px; background: var(--accent); }
+.sl-h-pt { border-radius: 50%; cursor: move; }
+.sl-guide { position: absolute; background: var(--brand); }
+.sl-guide.v { top: 0; bottom: 0; width: 1px; }
+.sl-guide.h { left: 0; right: 0; height: 1px; }
+.sl-marquee { position: absolute; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+.sl-notes { height: 96px; flex: none; background: var(--bg); border-top: 1px solid var(--line); }
+.sl-notes textarea { display: block; width: 100%; height: 100%; padding: 11px 18px; border: 0; outline: none; resize: none; background: transparent; font-size: 13.5px; line-height: 1.5; }
+.sl-notes textarea::placeholder { color: var(--faint); }
+
+/* --- slide show ----------------------------------------------------------- */
+.sl-show { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; background: #000; user-select: none; -webkit-user-select: none; touch-action: none; }
+.sl-show-fit { position: relative; overflow: hidden; }
+.sl-show-layer { position: absolute; inset: 0; overflow: hidden; }
+.sl-show-layer.in-fade { animation: sl-fade 0.32s ease both; }
+.sl-show-layer.in-slide { animation: sl-in 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.sl-show-layer.in-slide.rev { animation-name: sl-in-rev; }
+.sl-show-layer.out-slide { animation: sl-out 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.sl-show-layer.out-slide.rev { animation-name: sl-out-rev; }
+@keyframes sl-fade { from { opacity: 0; } }
+@keyframes sl-in { from { transform: translateX(100%); } }
+@keyframes sl-in-rev { from { transform: translateX(-100%); } }
+@keyframes sl-out { to { transform: translateX(-28%); opacity: 0.5; } }
+@keyframes sl-out-rev { to { transform: translateX(28%); opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .sl-show-layer { animation: none !important; } }
+.sl-show-end { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #c3cfdc; font-size: 20px; font-weight: 600; }
+.sl-show-end span { font-size: 13.5px; font-weight: 450; color: #6d7f92; }
+.sl-show-bar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 5px 7px; border-radius: 12px; background: rgba(19, 28, 38, 0.88); color: #e6edf5; opacity: 0; pointer-events: none; transition: opacity 0.18s; }
+.sl-show-bar.on { opacity: 1; pointer-events: auto; }
+.sl-show-bar .icon-btn { color: #e6edf5; }
+.sl-show-bar .icon-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.sl-show-count { min-width: 58px; text-align: center; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sl-fit { position: relative; overflow: hidden; flex: none; }
+
+/* --- presenter view (always dark: it is read in a dim room) ---------------- */
+.sl-presenter {
+  --bg: #131c26; --canvas: #0d141c; --sunken: #0a1017; --line: #243140; --line-strong: #34465a; --ink: #e6edf5; --ink-2: #c3cfdc; --muted: #93a4b6; --faint: #6d7f92;
+  --accent: #4d94f7; --accent-ink: #06121f; --accent-soft: #17304e; --accent-hover: #6ba6f9; color-scheme: dark;
+  position: fixed; inset: 0; z-index: 300; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 22px; padding: 20px 22px; background: var(--canvas); color: var(--ink);
+}
+.sl-pr-main { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.sl-pr-main .sl-fit { border-radius: 6px; box-shadow: 0 0 0 1px var(--line); }
+.sl-pr-side { min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.sl-pr-side .sl-fit { border-radius: 5px; box-shadow: 0 0 0 1px var(--line); opacity: 0.92; }
+.sl-pr-label { font-size: 12px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); }
+.sl-pr-label.row { margin-top: 6px; }
+.sl-pr-last { width: 300px; height: 168.75px; display: grid; place-items: center; border: 1px dashed var(--line-strong); border-radius: 5px; color: var(--muted); }
+.sl-pr-notes { flex: 1; min-height: 0; overflow: auto; white-space: pre-wrap; line-height: 1.5; padding: 14px 16px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+.sl-pr-bar { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 6px; }
+.sl-pr-time { font: 600 26px var(--mono); font-variant-numeric: tabular-nums; margin-right: 2px; }
+.sl-pr-clock { margin: 0 10px 0 6px; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+  .sl-presenter { grid-template-columns: 1fr; overflow: auto; }
+  .sl-pr-clock { display: none; }
+}
+
+/* --- small screens --------------------------------------------------------- */
+@media (max-width: 760px) {
+  .sl-body { flex-direction: column-reverse; }
+  .sl-strip { width: auto; flex-direction: row; align-items: flex-start; overflow: auto hidden; gap: 8px; padding: 8px 10px 10px; border-right: 0; border-top: 1px solid var(--line); }
+  .sl-thumb { flex-direction: column; gap: 2px; touch-action: pan-x; }
+  .sl-num { width: auto; padding: 0; text-align: left; font-size: 10.5px; }
+  .sl-thumb-frame { --k: 0.075; width: 96px; height: 54px; }
+  .sl-thumb.drop-before::before, .sl-thumb.drop-after::after { top: 16px; bottom: 0; width: 3px; height: auto; right: auto; left: -6px; }
+  .sl-thumb.drop-after::after { left: auto; right: -6px; }
+  .sl-add { margin: 16px 0 0; width: 54px; height: 54px; }
+  .sl-notes { height: 58px; }
+  .sl-lbl { display: none; }
+  .sl-view .doc-bar { gap: 6px; padding: 0 8px; }
+  .sl-view .doc-title { flex: 1 1 60px; }
+  .sl-view .presence { display: none; }
+  .sl-toolbar { padding: 4px 6px; }
+  .sl-toolbar .select { max-width: 96px; }
+}
+
+/* --- print: one slide per page --------------------------------------------- */
+.sl-print { display: none; }
+@media print {
+  html.sl-printing #app { display: none !important; }
+  html.sl-printing, html.sl-printing body { height: auto; overflow: visible; background: #fff; }
+  html.sl-printing .sl-print { display: block; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .sl-page { position: relative; width: 1280px; height: 720px; overflow: hidden; break-after: page; break-inside: avoid; }
+  .sl-page:last-child { break-after: auto; }
+}

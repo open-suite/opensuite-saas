@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks'
-import { FileText, Table2, Plus, Upload, MoreHorizontal, Trash2, Users, Pencil, RotateCcw, Search, Lock, Building2 } from 'lucide-preact'
+import { FileText, Table2, Presentation, Plus, Upload, MoreHorizontal, Trash2, Users, Pencil, RotateCcw, Search, Lock, Building2 } from 'lucide-preact'
 import { docs, user, org, people, peopleById, toast } from '../lib/store.js'
 import { navigate } from '../lib/router.js'
 import { createDoc, openNew, docPath, renameDoc, shareDoc, trashDoc, deleteDoc, convert } from '../lib/docs.js'
@@ -7,18 +7,21 @@ import { cx, when, pickFile } from '../lib/util.js'
 import { Avatar, Button, Empty, IconButton, Menu, Modal, Field } from '../ui.jsx'
 
 export function KindIcon({ kind }) {
-  return <span class={cx('kind-icon', 'kind-' + kind)}>{kind === 'sheet' ? <Table2 size={17} /> : <FileText size={17} />}</span>
+  return <span class={cx('kind-icon', 'kind-' + kind)}>{kind === 'sheet' ? <Table2 size={17} /> : kind === 'slides' ? <Presentation size={17} /> : <FileText size={17} />}</span>
 }
 
 // importFile turns a Word, OpenDocument, Markdown or Excel file into a new
 // document or spreadsheet.
 export async function importFile() {
-  const file = await pickFile('.docx,.odt,.md,.xlsx')
+  const file = await pickFile('.docx,.odt,.md,.xlsx,.pptx')
   if (!file) return
   const ext = file.name.split('.').pop().toLowerCase()
   const title = file.name.replace(/\.[^.]+$/, '')
   try {
-    if (ext === 'xlsx') {
+    if (ext === 'pptx') {
+      const { importDeck } = await import('./slides-pptx.js')
+      navigate(docPath(await importDeck(file, title, createDoc)))
+    } else if (ext === 'xlsx') {
       // The spreadsheet engine reads .xlsx itself, on this device.
       const { xlsxToSnapshot } = await import('./sheet.jsx')
       const snap = await xlsxToSnapshot(new Uint8Array(await file.arrayBuffer()), title)
@@ -120,17 +123,18 @@ export function Docs() {
   const rows = docs.value.filter((d) => {
     if (tab === 'trash') return d.trashed
     if (d.trashed) return false
-    if (tab === 'doc' || tab === 'sheet') if (d.kind !== tab) return false
+    if (tab === 'doc' || tab === 'sheet' || tab === 'slides') if (d.kind !== tab) return false
     if (tab === 'shared' && d.owner === me) return false
     return !needle || (d.title || 'untitled').toLowerCase().includes(needle)
   })
-  const tabs = [['all', 'All'], ['doc', 'Documents'], ['sheet', 'Spreadsheets'], ['shared', 'Shared with me'], ['trash', 'Trash']]
+  const tabs = [['all', 'All'], ['doc', 'Documents'], ['sheet', 'Spreadsheets'], ['slides', 'Presentations'], ['shared', 'Shared with me'], ['trash', 'Trash']]
   return (
     <div class="page">
       <div class="page-inner">
         <div class="page-head">
           <h1>Docs</h1>
           <Button icon={Upload} onClick={importFile}>Import</Button>
+          <Button icon={Presentation} onClick={() => openNew('slides')}>New presentation</Button>
           <Button icon={Table2} onClick={() => openNew('sheet')}>New spreadsheet</Button>
           <Button kind="primary" icon={Plus} onClick={() => openNew('doc')}>New document</Button>
         </div>

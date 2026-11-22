@@ -1,4 +1,4 @@
-import { FileText, Table2, Video, PenSquare, MessageSquare, Mail as MailIcon } from 'lucide-preact'
+import { FileText, Table2, Presentation, Video, PenSquare, MessageSquare, Mail as MailIcon } from 'lucide-preact'
 import { user, org, docs, meetings } from '../lib/store.js'
 import { navigate } from '../lib/router.js'
 import { openNew, docPath, newMeeting } from '../lib/docs.js'
@@ -33,6 +33,7 @@ export function Home() {
         <div class="quick">
           <button class="quick-btn" onClick={() => openNew('doc')}><span class="kind-icon kind-doc"><FileText size={17} /></span>New document</button>
           <button class="quick-btn" onClick={() => openNew('sheet')}><span class="kind-icon kind-sheet"><Table2 size={17} /></span>New spreadsheet</button>
+          <button class="quick-btn" onClick={() => openNew('slides')}><span class="kind-icon kind-slides"><Presentation size={17} /></span>New presentation</button>
           <button class="quick-btn" onClick={startMeeting}><span class="kind-icon kind-meet"><Video size={17} /></span>Start a meeting</button>
           <a class="quick-btn" href="/mail?compose=1"><span class="kind-icon kind-doc"><PenSquare size={17} /></span>Write an email</a>
         </div>
