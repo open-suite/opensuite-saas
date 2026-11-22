@@ -93,7 +93,7 @@ func TestSmallHelpers(t *testing.T) {
 		}
 	}
 	h := hashPassword("correct horse")
-	if !checkPassword(h, "correct horse") || checkPassword(h, "wrong") {
+	if !checkPassword(h, "correct horse") || !checkPassword(h, " correct horse\n") || checkPassword(h, "wrong") {
 		t.Error("password hashing")
 	}
 }

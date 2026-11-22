@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"log"
 	"net/http"
 	"regexp"
 	"slices"
@@ -186,7 +187,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, msg)
 		return
 	}
-	if len(in.Password) < 10 {
+	if len(cleanPassword(in.Password)) < 10 {
 		fail(w, 400, "Choose a password of at least 10 characters.")
 		return
 	}
@@ -237,6 +238,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		hashPassword(in.Password) // keep timing uniform
 	}
 	if err != nil || !checkPassword(hash, in.Password) {
+		// The operator's log says which half was wrong; the person signing in
+		// is never told, so addresses cannot be probed.
+		reason := "wrong password"
+		if err != nil {
+			reason = "no such address"
+		}
+		log.Printf("auth: sign-in refused for %q: %s", email, reason)
 		fail(w, 401, "That address and password don't match.")
 		return
 	}
@@ -260,7 +268,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request, u *User) {
 	var in struct{ Current, Password string }
-	if readJSON(r, &in) != nil || len(in.Password) < 10 {
+	if readJSON(r, &in) != nil || len(cleanPassword(in.Password)) < 10 {
 		fail(w, 400, "Choose a password of at least 10 characters.")
 		return
 	}

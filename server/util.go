@@ -62,7 +62,13 @@ func clientIP(r *http.Request) string {
 
 // --- passwords: argon2id, encoded as salt$hash ---
 
+// cleanPassword drops whitespace around a password. A password copied from a
+// message or a table often arrives with a stray space or line break, and
+// nobody means that to be part of it. Applied both when setting and checking.
+func cleanPassword(pw string) string { return strings.TrimSpace(pw) }
+
 func hashPassword(pw string) string {
+	pw = cleanPassword(pw)
 	salt := make([]byte, 16)
 	rand.Read(salt)
 	h := argon2.IDKey([]byte(pw), salt, 2, 32*1024, 2, 32)
@@ -79,7 +85,7 @@ func checkPassword(enc, pw string) bool {
 	if err1 != nil || err2 != nil {
 		return false
 	}
-	got := argon2.IDKey([]byte(pw), salt, 2, 32*1024, 2, 32)
+	got := argon2.IDKey([]byte(cleanPassword(pw)), salt, 2, 32*1024, 2, 32)
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
