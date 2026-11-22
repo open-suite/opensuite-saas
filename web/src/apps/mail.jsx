@@ -12,6 +12,8 @@ import {
 } from '../lib/mail.js'
 import { cx, when, whenFull, bytes, escapeHtml, debounce } from '../lib/util.js'
 import { Avatar, Button, Empty, IconButton, Menu } from '../ui.jsx'
+import { Invitation, notCalendar } from './agenda.jsx'
+import { addressBook } from '../lib/contacts.js'
 
 const folderIcon = { inbox: Inbox, sent: Send, drafts: FileEdit, archive: Archive, trash: Trash2, junk: ShieldAlert }
 const folderName = { inbox: 'Inbox', sent: 'Sent', drafts: 'Drafts', archive: 'Archive', trash: 'Trash', junk: 'Spam' }
@@ -121,7 +123,7 @@ function MessageBody({ email }) {
 
 function Message({ email, open, onToggle }) {
   const from = email.from?.[0]
-  const files = (email.attachments || []).filter((a) => !(a.cid && a.disposition === 'inline'))
+  const files = (email.attachments || []).filter((a) => !(a.cid && a.disposition === 'inline')).filter(notCalendar)
   return (
     <article class="msg">
       <div class={cx('msg-head', 'fold')} onClick={onToggle}>
@@ -132,6 +134,7 @@ function Message({ email, open, onToggle }) {
         </div>
         <div class="date" title={whenFull(new Date(email.receivedAt).getTime())}>{when(new Date(email.receivedAt).getTime())}</div>
       </div>
+      {open && <Invitation email={email} />}
       {open && (email.bodyValues ? <MessageBody email={email} /> : <div class="msg-body muted">{email.preview}</div>)}
       {open && files.length > 0 && (
         <div class="atts">
@@ -225,7 +228,7 @@ function Compose({ init, onClose }) {
       {showCc && <div class="line"><label for="c-cc">Cc</label><input id="c-cc" list="c-people" value={f.cc} onInput={set('cc')} autocomplete="off" /></div>}
       {showCc && <div class="line"><label for="c-bcc">Bcc</label><input id="c-bcc" list="c-people" value={f.bcc} onInput={set('bcc')} autocomplete="off" /></div>}
       <div class="line"><label for="c-subj">Subject</label><input id="c-subj" value={f.subject} onInput={set('subject')} /></div>
-      <datalist id="c-people">{people.value.map((p) => <option key={p.id} value={`${p.name} <${p.email}>`} />)}</datalist>
+      <datalist id="c-people">{addressBook.value.map((a) => <option key={a.email} value={a.name ? `${a.name} <${a.email}>` : a.email} />)}</datalist>
       <div class="compose-body" ref={body} contentEditable role="textbox" aria-multiline="true" aria-label="Message"
         onInput={() => saveDraft({ ...f, html: body.current.innerHTML })}
         onDrop={(e) => { if (e.dataTransfer?.files?.length) { e.preventDefault(); attach(e.dataTransfer.files) } }} />
@@ -303,7 +306,8 @@ export function Mail() {
       try {
         saved = JSON.parse(localStorage.getItem(DRAFT))
       } catch {}
-      setCompose(saved || { to: '', cc: '', bcc: '', subject: '', html: '' })
+      // A link that names the recipient (from Contacts) starts a fresh message.
+      setCompose(params.get('to') ? { to: params.get('to'), cc: '', bcc: '', subject: '', html: '' } : saved || { to: '', cc: '', bcc: '', subject: '', html: '' })
       navigate('/mail', { replace: true })
     } else if (params.get('open')) {
       setOpenId(params.get('open'))

@@ -2,7 +2,7 @@ import './lib/px.js'
 import { render } from 'preact'
 import { useEffect } from 'preact/hooks'
 import { signal } from '@preact/signals'
-import { Home as HomeIcon, Mail as MailIcon, MessageSquare, Video, FileText, Settings, LogOut, User } from 'lucide-preact'
+import { Home as HomeIcon, Mail as MailIcon, MessageSquare, Video, FileText, Settings, LogOut, User, CalendarDays, Users } from 'lucide-preact'
 import './style.css'
 import { boot, user, isAdmin, unread, confirmed } from './lib/store.js'
 import { path, parts, navigate } from './lib/router.js'
@@ -11,6 +11,9 @@ import { signOut } from './lib/session.js'
 import { cx, idle } from './lib/util.js'
 import { startChat } from './lib/matrix.js'
 import { startMail } from './lib/mail.js'
+import { startCalendar } from './lib/calendar.js'
+import { startContacts } from './lib/contacts.js'
+import { Reminders } from './apps/agenda.jsx'
 import { Avatar, Logo, Menu, Toasts } from './ui.jsx'
 import { Login, Signup, SetPassword } from './apps/auth.jsx'
 import { Home } from './apps/home.jsx'
@@ -27,6 +30,8 @@ const heavy = {
   editor: () => import('./apps/editor.jsx'),
   sheet: () => import('./apps/sheet.jsx'),
   room: () => import('./apps/room.jsx'),
+  calendar: () => import('./apps/calendar.jsx'),
+  contacts: () => import('./apps/contacts.jsx'),
 }
 const loaded = signal({})
 function load(name) {
@@ -63,9 +68,11 @@ function Rail({ section }) {
       <a href="/" class="rail-logo" aria-label="Home"><Logo size={32} /></a>
       {link('/', 'home', HomeIcon, 'Home')}
       {link('/mail', 'mail', MailIcon, 'Mail', unread.value.mail)}
+      {link('/calendar', 'calendar', CalendarDays, 'Calendar')}
       {link('/chat', 'chat', MessageSquare, 'Chat', unread.value.chat)}
       {link('/meet', 'meet', Video, 'Meet')}
       {link('/docs', 'docs', FileText, 'Docs')}
+      <span class="rail-wide">{link('/contacts', 'contacts', Users, 'Contacts')}</span>
       <div class="rail-spacer" />
       {isAdmin.value && link('/admin', 'admin', Settings, 'Admin')}
       <Menu
@@ -74,6 +81,7 @@ function Rail({ section }) {
         items={[
           { heading: u.email },
           { label: 'Your account', icon: User, onSelect: () => navigate('/account') },
+          { label: 'Contacts', icon: Users, onSelect: () => navigate('/contacts') },
           { divider: true },
           { label: 'Sign out', icon: LogOut, onSelect: signOut },
         ]}
@@ -91,6 +99,8 @@ function App() {
     if (!u) return
     startChat()
     startMail()
+    startCalendar()
+    startContacts()
     idle(() => Object.keys(heavy).forEach(load))
   }, [u?.id, b?.chat?.ready, b?.mail?.ready])
 
@@ -113,6 +123,8 @@ function App() {
   switch (p[0]) {
     case undefined: view = <Home />; break
     case 'mail': view = <Mail />; break
+    case 'calendar': view = <Heavy name="calendar" />; break
+    case 'contacts': view = <Heavy name="contacts" />; break
     case 'chat': view = <Chat />; break
     case 'meet': view = <MeetHome />; break
     case 'docs': view = <Docs />; break
@@ -129,6 +141,7 @@ function App() {
         {!online.value && <div class="offline-bar">You're offline. Open Suite keeps working and will sync when you're back.</div>}
         {view}
       </main>
+      <Reminders />
       <Toasts />
     </div>
   )
