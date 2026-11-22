@@ -143,6 +143,7 @@ func main() {
 	defer stop()
 	go s.tls.run(ctx)
 	go s.janitor(ctx)
+	go s.mailGroupware(ctx)
 	go func() {
 		log.Printf("opensuite listening on %s for %s", cfg.Listen, cfg.Domain)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -208,6 +209,7 @@ func (s *Server) routes() http.Handler {
 	m.HandleFunc("GET /api/mail/blob/{blob}/{name}", s.auth(s.handleMailBlob))
 	m.HandleFunc("POST /api/mail/upload", s.auth(s.handleMailUpload))
 	m.HandleFunc("GET /api/mail/events", s.auth(s.handleMailEvents))
+	m.HandleFunc("POST /api/calendar/freebusy", s.auth(s.handleFreeBusy))
 
 	// ACME HTTP-01 and nginx on-demand hooks
 	m.HandleFunc("GET /.well-known/acme-challenge/{token}", s.tls.handleChallenge)

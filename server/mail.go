@@ -370,9 +370,10 @@ func (s *Server) mailDeleteDomain(domain string) {
 
 // --- the browser's mail traffic ---
 
-var jmapAllowedMethods = []string{"Mailbox/", "Email/", "Thread/", "EmailSubmission/", "Identity/", "SearchSnippet/", "VacationResponse/", "Core/echo"}
+var jmapAllowedMethods = append([]string{"Mailbox/", "Email/", "Thread/", "EmailSubmission/", "Identity/", "SearchSnippet/", "VacationResponse/", "Core/echo"}, jmapGroupware...)
 
-var jmapUsing = []string{"urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", "urn:ietf:params:jmap:submission", "urn:ietf:params:jmap:vacationresponse"}
+var jmapUsing = []string{"urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", "urn:ietf:params:jmap:submission", "urn:ietf:params:jmap:vacationresponse",
+	"urn:ietf:params:jmap:calendars", "urn:ietf:params:jmap:calendars:parse", "urn:ietf:params:jmap:contacts", "urn:ietf:params:jmap:contacts:parse"}
 
 // handleJMAP forwards a mail request for the signed-in person. It pins every
 // call to their own mailbox and to mail methods only, so the engine's
@@ -405,7 +406,7 @@ func (s *Server) handleJMAP(w http.ResponseWriter, r *http.Request, u *User) {
 		for _, p := range jmapAllowedMethods {
 			allowed = allowed || strings.HasPrefix(name, p)
 		}
-		if !allowed {
+		if !allowed || !groupwareCallOK(name, args) {
 			fail(w, 403, "method not available")
 			return
 		}
@@ -493,7 +494,7 @@ func (s *Server) handleMailEvents(w http.ResponseWriter, r *http.Request, u *Use
 		fail(w, 503, "Your mailbox is being set up.")
 		return
 	}
-	req, _ := http.NewRequestWithContext(r.Context(), "GET", s.cfg.MailURL+"/jmap/eventsource/?types=Email,Mailbox&closeafter=no&ping=30", nil)
+	req, _ := http.NewRequestWithContext(r.Context(), "GET", s.cfg.MailURL+"/jmap/eventsource/?types=Email,Mailbox,Calendar,CalendarEvent,AddressBook,ContactCard&closeafter=no&ping=30", nil)
 	req.SetBasicAuth(u.Email, u.MailSecret)
 	req.Header.Set("Accept", "text/event-stream")
 	res, err := mailClient.Do(req)
