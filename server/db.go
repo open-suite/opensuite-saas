@@ -97,6 +97,10 @@ CREATE TABLE IF NOT EXISTS kv(
 ) WITHOUT ROWID;
 `
 
+// migrations run after the base schema, in order. A feature registers its own
+// tables and columns from an init function in its own file.
+var migrations []func(*sql.DB) error
+
 // openDB returns a single-connection write handle and a pooled read handle on
 // the same WAL database. One writer means SQLite never returns SQLITE_BUSY to
 // us; readers never block behind it.
@@ -109,6 +113,11 @@ func openDB(dir string) (w, r *sql.DB, err error) {
 	w.SetMaxOpenConns(1)
 	if _, err = w.Exec(schema); err != nil {
 		return nil, nil, fmt.Errorf("schema: %w", err)
+	}
+	for _, migrate := range migrations {
+		if err = migrate(w); err != nil {
+			return nil, nil, fmt.Errorf("schema: %w", err)
+		}
 	}
 	if r, err = sql.Open("sqlite", dsn+"&mode=ro"); err != nil {
 		return nil, nil, err

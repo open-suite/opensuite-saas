@@ -74,7 +74,7 @@ func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request, u *
 	ok(w, map[string]any{
 		"people":  s.people(u.OrgID),
 		"domains": s.orgDomains(u.OrgID),
-		"usage":   map[string]any{"storage": s.orgUsage(u.OrgID)},
+		"usage":   map[string]any{"storage": s.orgUsage(u.OrgID), "files": s.orgFileBytes(u.OrgID)},
 		"limits":  planFor(plan),
 		"plan":    plan,
 	})

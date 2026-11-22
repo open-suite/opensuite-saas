@@ -16,8 +16,9 @@ import (
 
 type Doc struct {
 	ID      string  `json:"id"`
-	Kind    string  `json:"kind"` // doc | sheet
+	Kind    string  `json:"kind"` // one of docKinds
 	Title   string  `json:"title"`
+	Folder  string  `json:"folder"` // the folder it is filed in; "" is the owner's top level
 	Access  string  `json:"access"` // private | org
 	Owner   string  `json:"owner"`
 	Role    string  `json:"role"` // owner | edit | view
@@ -32,24 +33,40 @@ type Share struct {
 	Role string `json:"role"`
 }
 
-// docList returns every document the user can open, newest first.
+// docKinds are the editors a document can belong to.
+var docKinds = map[string]bool{"doc": true, "sheet": true}
+
+// docList returns every document the user can open, newest first. A document
+// filed in a folder is also open to whoever can open that folder.
 func (s *Server) docList(u *User) []Doc {
 	out := []Doc{}
-	rows, err := s.r.Query(`SELECT d.id, d.kind, d.title, d.access, d.owner_id, d.created, d.updated, d.trashed, coalesce(sh.role, '')
+	rows, err := s.r.Query(`SELECT d.id, d.kind, d.title, d.folder_id, d.access, d.owner_id, d.created, d.updated, d.trashed, coalesce(sh.role, '')
 		FROM docs d LEFT JOIN doc_shares sh ON sh.doc_id = d.id AND sh.user_id = ?1
-		WHERE d.org_id = ?2 AND (d.owner_id = ?1 OR d.access = 'org' OR sh.user_id IS NOT NULL)
+		WHERE d.org_id = ?2 AND (d.owner_id = ?1 OR d.access = 'org' OR sh.user_id IS NOT NULL OR d.folder_id != '')
 		ORDER BY d.updated DESC LIMIT 2000`, u.ID, u.OrgID)
 	if err != nil {
 		return out
 	}
+	var tree *nodeTree
 	idx := map[string]int{}
 	for rows.Next() {
 		var d Doc
 		var share string
-		rows.Scan(&d.ID, &d.Kind, &d.Title, &d.Access, &d.Owner, &d.Created, &d.Updated, &d.Trashed, &share)
+		rows.Scan(&d.ID, &d.Kind, &d.Title, &d.Folder, &d.Access, &d.Owner, &d.Created, &d.Updated, &d.Trashed, &share)
 		d.Role = roleOf(u, d.Owner, d.Access, share)
 		d.Shares = []Share{}
-		if d.Trashed > 0 && d.Role != "owner" {
+		if d.Folder != "" {
+			if tree == nil {
+				tree = s.nodeTree(u)
+			}
+			role, usable := tree.folder(d.Folder)
+			if usable {
+				d.Role = bestRole(d.Role, role)
+			} else if tree.nodes[d.Folder] != nil && (d.Owner != u.ID || role == "owner") {
+				continue // its folder is in the trash
+			}
+		}
+		if d.Role == "" || (d.Trashed > 0 && d.Role != "owner") {
 			continue
 		}
 		idx[d.ID] = len(out)
@@ -85,23 +102,32 @@ func roleOf(u *User, owner, access, share string) string {
 
 // docRole answers "may this user open this document, and how".
 func (s *Server) docRole(u *User, id string) (role, kind string) {
-	var owner, access, share string
+	var owner, access, share, folder string
 	var trashed int64
-	err := s.r.QueryRow(`SELECT d.owner_id, d.access, d.kind, d.trashed, coalesce(sh.role, '') FROM docs d
+	err := s.r.QueryRow(`SELECT d.owner_id, d.access, d.kind, d.trashed, d.folder_id, coalesce(sh.role, '') FROM docs d
 		LEFT JOIN doc_shares sh ON sh.doc_id = d.id AND sh.user_id = ?1 WHERE d.id = ?2 AND d.org_id = ?3`, u.ID, id, u.OrgID).
-		Scan(&owner, &access, &kind, &trashed, &share)
+		Scan(&owner, &access, &kind, &trashed, &folder, &share)
 	if err != nil {
 		return "", ""
 	}
-	return roleOf(u, owner, access, share), kind
+	role = roleOf(u, owner, access, share)
+	if folder != "" && role != "owner" {
+		inherited, _, _ := s.nodeRole(u, folder)
+		role = bestRole(role, inherited)
+	}
+	return role, kind
 }
 
 func (s *Server) handleDocList(w http.ResponseWriter, r *http.Request, u *User) { ok(w, s.docList(u)) }
 
 func (s *Server) handleDocCreate(w http.ResponseWriter, r *http.Request, u *User) {
-	var in struct{ ID, Kind, Title, Snapshot string }
-	if readJSON(r, &in) != nil || (in.Kind != "doc" && in.Kind != "sheet") {
+	var in struct{ ID, Kind, Title, Snapshot, Folder string }
+	if readJSON(r, &in) != nil || !docKinds[in.Kind] {
 		fail(w, 400, "bad request")
+		return
+	}
+	if code, msg := s.placeIn(u, in.Folder); code != 0 {
+		fail(w, code, msg)
 		return
 	}
 	// The client may mint the id so a new document opens before the server
@@ -121,13 +147,13 @@ func (s *Server) handleDocCreate(w http.ResponseWriter, r *http.Request, u *User
 		snap, seq = b, 1
 	}
 	t := now()
-	_, err := s.w.Exec(`INSERT INTO docs(id, org_id, owner_id, kind, title, created, updated, snap, snap_seq, seq) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		id, u.OrgID, u.ID, in.Kind, strings.TrimSpace(in.Title), t, t, snap, seq, seq)
+	_, err := s.w.Exec(`INSERT INTO docs(id, org_id, owner_id, kind, title, folder_id, created, updated, snap, snap_seq, seq) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		id, u.OrgID, u.ID, in.Kind, strings.TrimSpace(in.Title), in.Folder, t, t, snap, seq, seq)
 	if err != nil {
 		fail(w, 409, "That document already exists.")
 		return
 	}
-	ok(w, Doc{ID: id, Kind: in.Kind, Title: in.Title, Access: "private", Owner: u.ID, Role: "owner", Created: t, Updated: t, Shares: []Share{}})
+	ok(w, Doc{ID: id, Kind: in.Kind, Title: in.Title, Folder: in.Folder, Access: "private", Owner: u.ID, Role: "owner", Created: t, Updated: t, Shares: []Share{}})
 }
 
 func (s *Server) handleDocUpdate(w http.ResponseWriter, r *http.Request, u *User) {
@@ -139,6 +165,7 @@ func (s *Server) handleDocUpdate(w http.ResponseWriter, r *http.Request, u *User
 	}
 	var in struct {
 		Title   *string
+		Folder  *string
 		Access  *string
 		Trashed *bool
 		Shares  *[]Share
@@ -146,6 +173,21 @@ func (s *Server) handleDocUpdate(w http.ResponseWriter, r *http.Request, u *User
 	if readJSON(r, &in) != nil {
 		fail(w, 400, "bad request")
 		return
+	}
+	if in.Folder != nil {
+		// Filing a document somewhere else: into a folder the caller may add
+		// to, or back to the top level of whoever owns it.
+		var owner string
+		s.r.QueryRow(`SELECT owner_id FROM docs WHERE id = ?`, id).Scan(&owner)
+		if *in.Folder == "" && owner != u.ID {
+			fail(w, 403, "Only the owner can move this out of the shared folder.")
+			return
+		}
+		if code, msg := s.placeIn(u, *in.Folder); code != 0 {
+			fail(w, code, msg)
+			return
+		}
+		s.w.Exec(`UPDATE docs SET folder_id = ? WHERE id = ?`, *in.Folder, id)
 	}
 	if in.Title != nil {
 		title := strings.TrimSpace(*in.Title)

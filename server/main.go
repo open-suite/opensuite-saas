@@ -193,6 +193,7 @@ func (s *Server) routes() http.Handler {
 	m.HandleFunc("POST /api/convert", s.auth(s.handleConvert))
 	m.HandleFunc("POST /api/blobs", s.auth(s.handleBlobPut))
 	m.HandleFunc("GET /api/blobs/{id}", s.auth(s.handleBlobGet))
+	s.routesFiles(m)
 
 	// meetings (join is open to guests holding the link)
 	m.HandleFunc("GET /api/meet", s.auth(s.handleMeetList))
@@ -232,6 +233,7 @@ func (s *Server) janitor(ctx context.Context) {
 			s.w.Exec(`DELETE FROM sessions WHERE expires < ?`, now())
 			s.w.Exec(`DELETE FROM docs WHERE trashed > 0 AND trashed < ?`, now()-30*86400)
 			s.w.Exec(`DELETE FROM doc_updates WHERE doc_id NOT IN (SELECT id FROM docs)`)
+			s.filesJanitor()
 		}
 	}
 }

@@ -106,7 +106,7 @@ func (s *Server) orgUsage(orgID string) int64 {
 	s.r.QueryRow(`SELECT coalesce(sum(size), 0) FROM blobs WHERE org_id = ?`, orgID).Scan(&blobs)
 	s.r.QueryRow(`SELECT coalesce(sum(length(snap)), 0) FROM docs WHERE org_id = ?`, orgID).Scan(&docs)
 	s.r.QueryRow(`SELECT coalesce(sum(length(u.data)), 0) FROM doc_updates u JOIN docs d ON d.id = u.doc_id WHERE d.org_id = ?`, orgID).Scan(&log)
-	return blobs + docs + log
+	return blobs + docs + log + s.orgFileBytes(orgID)
 }
 
 func (s *Server) handleBlobPut(w http.ResponseWriter, r *http.Request, u *User) {
