@@ -1,5 +1,5 @@
 // Contacts: the person's own address book beside the organisation's people.
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ArrowLeft, Building2, Download, Mail as MailIcon, MapPin, MoreHorizontal, Pencil, Phone, Plus, Search, StickyNote, Trash2, Upload, Users, X } from 'lucide-preact'
 import './contacts.css'
 import { people, org, user, toast } from '../lib/store.js'
@@ -38,7 +38,7 @@ function Editor({ card, onDone }) {
   })
   const on = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const first = useRef()
-  useEffect(() => first.current?.focus(), [])
+  useLayoutEffect(() => first.current?.focus(), [])
   const save = (e) => {
     e?.preventDefault()
     const bad = f.emails.find((x) => x.value.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.value.trim()))

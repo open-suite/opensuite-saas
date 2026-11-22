@@ -14,11 +14,12 @@ import {
 } from '../lib/calendar.js'
 import {
   DAY, MIN, localZone, addDays, addMonths, startOfDay, startOfWeek, startOfMonth, sameDay, hhmm, monthTitle, weekdayName, dayLong,
-  wallIn, formatWall, formatDuration,
+  wallIn, formatWall, formatDuration, parseWall, instantOf, parseDuration,
 } from '../lib/time.js'
 import { card, quick, draft, closeAll, scoped, join, EventCard, QuickCreate, EventEditor, ScopeDialog } from './calendar-event.jsx'
 
 const HOUR = 48 // pixels per hour in the time grid
+const hourLabel = new Intl.DateTimeFormat(undefined, { hour: 'numeric' })
 const SNAP = 15 * MIN
 const narrow = () => innerWidth <= 760
 
@@ -250,6 +251,14 @@ function TimeGrid({ days, occs }) {
     }
   }
 
+  // The slot being named in the small form stays marked until it is saved.
+  const q = quick.value
+  let slot = ghost
+  if (!slot && q && !q.ev.showWithoutTime) {
+    const s = instantOf(parseWall(q.ev.start), localZone)
+    const from = (s - startOfDay(s)) / MIN
+    slot = { day: days.findIndex((d) => sameDay(d, s)), from, to: from + parseDuration(q.ev.duration) / MIN, fresh: true }
+  }
   const nowDay = days.findIndex((d) => sameDay(d, now))
   const nowTop = ((now - startOfDay(now)) / 3600000) * HOUR
   return (
@@ -277,7 +286,7 @@ function TimeGrid({ days, occs }) {
       <div class="tg-scroll" ref={scroll}>
         <div class="tg-body" style={{ height: 24 * HOUR }}>
           <div class="tg-gutter">
-            {Array.from({ length: 23 }, (_, h) => <span key={h} style={{ top: (h + 1) * HOUR }}>{hhmm(new Date(2020, 0, 1, h + 1).getTime())}</span>)}
+            {Array.from({ length: 23 }, (_, h) => <span key={h} style={{ top: (h + 1) * HOUR }}>{hourLabel.format(new Date(2020, 0, 1, h + 1))}</span>)}
           </div>
           <div class="tg-cols" ref={colsRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; setGhost(null) }}>
             {days.map((day, i) => (
@@ -297,10 +306,10 @@ function TimeGrid({ days, occs }) {
                     </div>
                   )
                 })}
-                {ghost && ghost.day === i && (
-                  <div class={cx('tg-ev ghost', ghost.fresh && 'fresh')} style={{ top: (ghost.from / 60) * HOUR, height: Math.max(12, ((ghost.to - ghost.from) / 60) * HOUR - 2), left: 1, right: 3, '--c': ghost.occ?.color || 'var(--accent)' }}>
-                    <div class="ttl ellipsis">{ghost.occ?.title || 'New event'}</div>
-                    <div class="sub">{hhmm(day + ghost.from * MIN)} – {hhmm(day + ghost.to * MIN)}</div>
+                {slot && slot.day === i && (
+                  <div class={cx('tg-ev ghost', slot.fresh && 'fresh')} style={{ top: (slot.from / 60) * HOUR, height: Math.max(12, ((slot.to - slot.from) / 60) * HOUR - 2), left: 1, right: 3, '--c': slot.occ?.color || 'var(--accent)' }}>
+                    <div class="ttl ellipsis">{slot.occ?.title || 'New event'}</div>
+                    <div class="sub">{hhmm(day + slot.from * MIN)} – {hhmm(day + slot.to * MIN)}</div>
                   </div>
                 )}
                 {nowDay === i && <div class="now" style={{ top: nowTop }} />}
@@ -475,7 +484,7 @@ function CalendarForm() {
   const [color, setColor] = useState(COLORS[1])
   const [busy, setBusy] = useState(false)
   const input = useRef()
-  useEffect(() => {
+  useLayoutEffect(() => {
     setName(c?.name || '')
     setColor(c?.color || (c?.id ? COLORS[0] : COLORS[1 + (calendars.value.length % (COLORS.length - 1))]))
     input.current?.focus()

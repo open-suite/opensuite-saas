@@ -31,7 +31,9 @@ function Floating({ x, y, class: cls, onClose, children, ...rest }) {
   useLayoutEffect(() => {
     const el = ref.current
     const r = el.getBoundingClientRect()
-    el.style.left = Math.max(8, Math.min(x + 10, innerWidth - r.width - 8)) + 'px'
+    // To the right of the pointer when there is room, otherwise to its left.
+    const left = x + 10 + r.width <= innerWidth - 8 ? x + 10 : x - 10 - r.width
+    el.style.left = Math.max(8, Math.min(left, innerWidth - r.width - 8)) + 'px'
     el.style.top = Math.max(8, Math.min(y - 24, innerHeight - r.height - 8)) + 'px'
     el.style.visibility = 'visible'
   })
@@ -161,7 +163,7 @@ export function QuickCreate() {
   const q = quick.value
   const [title, setTitle] = useState('')
   const input = useRef()
-  useEffect(() => {
+  useLayoutEffect(() => {
     setTitle('')
     input.current?.focus() // typing names the event straight away
   }, [q?.ev.uid])
@@ -358,7 +360,7 @@ function Availability({ form, startMs, endMs, self }) {
           </span>
         </div>
       ))}
-      <div class="avail-row scale"><span class="who" /><span class="track">{[7, 9, 11, 13, 15, 17, 19].map((h) => <i key={h} style={{ left: ((h - 7) / 14) * 100 + '%' }}>{hhmm(day + h * 3600000)}</i>)}</span></div>
+      <div class="avail-row scale"><span class="who" /><span class="track">{[7, 10, 13, 16, 19].map((h) => <i key={h} style={{ left: ((h - 7) / 14) * 100 + '%' }}>{hhmm(day + h * 3600000)}</i>)}</span></div>
       <div class={cx('avail-note', blocked.length && 'warn')}>{blocked.length ? `${blocked.join(' and ')} ${blocked.length > 1 || blocked[0] === 'You' ? 'are' : 'is'} busy at this time.` : 'Everyone is free at this time.'}</div>
     </div>
   )
@@ -369,11 +371,12 @@ export function EventEditor() {
   const [f, setF] = useState(null)
   const [custom, setCustom] = useState(false)
   const titleRef = useRef()
-  useEffect(() => {
+  useLayoutEffect(() => {
     setF(d ? formOf(d.ev) : null)
     setCustom(false)
   }, [d])
-  useEffect(() => {
+  // Before the form is painted, so the first keystroke lands in the title.
+  useLayoutEffect(() => {
     if (f) titleRef.current?.focus()
   }, [d, !!f])
   if (!d || !f) return null
