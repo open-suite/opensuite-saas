@@ -158,11 +158,12 @@ export function fileType({ name, mime = '' }) {
   return 'other'
 }
 
-// opensAs says which editor can take a file over: 'doc', 'sheet' or nothing.
+// opensAs says which editor can take a file over (a key of docKinds), or nothing.
 export function opensAs({ name }) {
   const e = ext(name)
   if (['docx', 'odt', 'md', 'markdown'].includes(e)) return 'doc'
   if (['xlsx', 'csv'].includes(e)) return 'sheet'
+  if (e === 'pptx') return 'slides'
   return null
 }
 

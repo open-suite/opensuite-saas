@@ -2,13 +2,13 @@
 // chat and meetings. Each one is a provider as described in lib/search.js;
 // a new part of the suite adds its own with addProvider in the same way.
 import { Users, FileText, Table2, Mail as MailIcon, MessageSquare, Video, PenSquare, Folder, File as FileIcon } from 'lucide-preact'
-import { CalendarDays, Contact } from 'lucide-preact'
+import { CalendarDays, Contact, Presentation } from 'lucide-preact'
 import { items, folders, itemHref } from './files.js'
 import { occurrences, placeOf, notesOf, guestsOf } from './calendar.js'
 import { cards, nameOf as contactName, emailsOf, phonesOf, companyOf } from './contacts.js'
 import { DAY, startOfDay, dateKey, span } from './time.js'
 import { boot, docs, people, peopleById, meetings, user, upsertDoc } from './store.js'
-import { docPath } from './docs.js'
+import { docPath, docKinds } from './docs.js'
 import { navigate } from './router.js'
 import { emails, jmap } from './mail.js'
 import { rooms, roomTitle, nameOf, openDirect } from './matrix.js'
@@ -45,8 +45,8 @@ addProvider({
 
 // --- documents and spreadsheets ---------------------------------------------------
 
-const docKind = (d) => (d.kind === 'sheet' ? 'Spreadsheet' : 'Document')
-const docIcon = (d) => (d.kind === 'sheet' ? Table2 : FileText)
+const docKind = (d) => docKinds[d.kind]?.name || 'Document'
+const docIcon = (d) => ({ sheet: Table2, slides: Presentation })[d.kind] || FileText
 
 function docSub(d) {
   const owner = d.owner === user.value?.id ? 'You' : peopleById.value[d.owner]?.name

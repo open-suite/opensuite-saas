@@ -8,6 +8,7 @@ import { newId, newMeetCode } from './util.js'
 export const docKinds = {
   doc: { path: '/d/', name: 'Document', create: 'New document' },
   sheet: { path: '/s/', name: 'Spreadsheet', create: 'New spreadsheet' },
+  slides: { path: '/p/', name: 'Presentation', create: 'New presentation' },
 }
 
 export const docPath = (d) => (docKinds[d.kind]?.path || '/d/') + d.id
@@ -19,6 +20,7 @@ export function createDoc(kind, { title = '', snapshot, folder = '' } = {}) {
   const t = Math.floor(Date.now() / 1000)
   const doc = { id: newId(14), kind, title, folder, access: 'private', owner: user.value.id, role: 'owner', created: t, updated: t, shares: [] }
   upsertDoc(doc)
+  fresh.add(doc.id)
   const saved = post('/api/docs', { id: doc.id, kind, title, snapshot, folder }).catch((e) => {
     removeDoc(doc.id)
     toast(e.message, 'error')
@@ -32,6 +34,11 @@ export function createDoc(kind, { title = '', snapshot, folder = '' } = {}) {
 // its live connection is not attempted too early.
 const creating = new Map()
 export const whenCreated = (id) => creating.get(id) || Promise.resolve()
+
+// isFresh says a document was made on this device in this session, so its
+// editor may write the first content without waiting to hear from the server.
+const fresh = new Set()
+export const isFresh = (id) => fresh.has(id)
 
 export function openNew(kind, folder = '') {
   const { doc } = createDoc(kind, { folder })

@@ -242,6 +242,7 @@ a.list-row:hover, .list-row.hover:hover { background: var(--canvas); text-decora
 .kind-icon { width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center; flex: none; }
 .kind-doc { background: var(--accent-soft); color: var(--accent); }
 .kind-sheet { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.kind-slides { background: color-mix(in srgb, var(--warn) 17%, transparent); color: var(--warn); }
 .kind-meet { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
 
 table.table { width: 100%; border-collapse: collapse; }

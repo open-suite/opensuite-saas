@@ -202,7 +202,7 @@ export function Drive() {
     { label: 'Delete for ever', icon: Trash2, danger: true, onSelect: () => setDialog({ type: 'delete', items: [i] }) },
   ] : [
     i.type === 'file' && { label: 'Download', icon: Download, onSelect: () => download([i]) },
-    i.type === 'file' && opensAs(i) && { label: opensAs(i) === 'sheet' ? 'Open as spreadsheet' : 'Open as document', icon: FileInput, onSelect: () => openAs(i) },
+    i.type === 'file' && opensAs(i) && { label: 'Open as ' + docKinds[opensAs(i)].name.toLowerCase(), icon: FileInput, onSelect: () => openAs(i) },
     i.role !== 'view' && { label: 'Rename', icon: Pencil, hint: 'F2', onSelect: () => setDialog({ type: 'rename', item: i }) },
     i.role !== 'view' && { label: 'Move to…', icon: FolderInput, onSelect: () => setDialog({ type: 'move', items: [i] }) },
     { label: 'Share', icon: Share2, onSelect: () => setDialog({ type: 'share', key: i.key }) },
@@ -704,7 +704,7 @@ function Preview({ item, siblings, onShare, onOpenAs }) {
         </div>
         {siblings.length > 1 && <IconButton icon={ChevronLeft} label="Previous" disabled={!prev} onClick={() => navigate(itemHref(prev), { replace: true })} />}
         {siblings.length > 1 && <IconButton icon={ChevronRight} label="Next" disabled={!next} onClick={() => navigate(itemHref(next), { replace: true })} />}
-        {as && <Button icon={ExternalLink} onClick={onOpenAs}><span class="wide-only">{as === 'sheet' ? 'Open as spreadsheet' : 'Open as document'}</span></Button>}
+        {as && <Button icon={ExternalLink} onClick={onOpenAs}><span class="wide-only">{'Open as ' + docKinds[as].name.toLowerCase()}</span></Button>}
         <Button icon={Share2} onClick={onShare}><span class="wide-only">Share</span></Button>
         <a class="btn btn-primary" href={contentUrl(item.id, true)} download={item.name}><Download size={16} /><span class="wide-only">Download</span></a>
       </header>

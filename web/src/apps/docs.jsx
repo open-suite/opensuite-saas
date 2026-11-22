@@ -2,7 +2,7 @@
 // into one, and the dialogs for sharing and renaming. The list they live in
 // is the drive (apps/files.jsx).
 import { useState } from 'preact/hooks'
-import { FileText, Table2, Lock, Building2, Globe, Copy } from 'lucide-preact'
+import { FileText, Table2, Presentation, Lock, Building2, Globe, Copy } from 'lucide-preact'
 import { org, people, peopleById, toast } from '../lib/store.js'
 import { navigate } from '../lib/router.js'
 import { createDoc, docPath, renameDoc, shareDoc, convert } from '../lib/docs.js'
@@ -10,17 +10,17 @@ import { cx, pickFile, copyText } from '../lib/util.js'
 import { Avatar, Button, Modal, Field } from '../ui.jsx'
 
 // One icon per kind of document; a new editor adds its line here.
-export const kindIcons = { doc: FileText, sheet: Table2 }
+export const kindIcons = { doc: FileText, sheet: Table2, slides: Presentation }
 
 export function KindIcon({ kind }) {
   const Icon = kindIcons[kind] || FileText
   return <span class={cx('kind-icon', 'kind-' + kind)}><Icon size={17} /></span>
 }
 
-// importFile asks for a Word, OpenDocument, Markdown, Excel or CSV file and
-// turns it into a new document or spreadsheet.
+// importFile asks for a Word, OpenDocument, Markdown, Excel, CSV or PowerPoint
+// file and turns it into a new document, spreadsheet or presentation.
 export async function importFile(folder = '') {
-  const file = await pickFile('.docx,.odt,.md,.xlsx,.csv')
+  const file = await pickFile('.docx,.odt,.md,.xlsx,.csv,.pptx')
   if (file) await importBlob(file, folder)
 }
 
@@ -29,7 +29,10 @@ export async function importBlob(file, folder = '') {
   const ext = file.name.split('.').pop().toLowerCase()
   const title = file.name.replace(/\.[^.]+$/, '')
   try {
-    if (ext === 'xlsx' || ext === 'csv') {
+    if (ext === 'pptx') {
+      const { importDeck } = await import('./slides-pptx.js')
+      navigate(docPath(await importDeck(file, title, (kind, opts) => createDoc(kind, { ...opts, folder }))))
+    } else if (ext === 'xlsx' || ext === 'csv') {
       // The spreadsheet engine reads these itself, on this device.
       const snap = ext === 'csv'
         ? await (await import('../lib/csv.js')).csvToSnapshot(await file.text(), title)

@@ -32,6 +32,7 @@ import { SearchPalette, SearchPage, SearchButton } from './apps/search.jsx'
 const heavy = {
   editor: () => import('./apps/editor.jsx'),
   sheet: () => import('./apps/sheet.jsx'),
+  slides: () => import('./apps/slides.jsx'),
   room: () => import('./apps/room.jsx'),
   calendar: () => import('./apps/calendar.jsx'),
   contacts: () => import('./apps/contacts.jsx'),
@@ -126,7 +127,7 @@ function App() {
   }
   if (u.mustChange) return <><SetPassword /><Toasts /></>
 
-  const section = { d: 'docs', s: 'docs', files: 'docs', account: '' }[p[0]] ?? (p[0] || 'home')
+  const section = { d: 'docs', s: 'docs', p: 'docs', files: 'docs', account: '' }[p[0]] ?? (p[0] || 'home')
   let view
   switch (p[0]) {
     case undefined: view = <Home />; break
@@ -138,6 +139,7 @@ function App() {
     case 'files': case 'docs': view = <Drive />; break
     case 'd': view = <Heavy name="editor" id={p[1]} key={p[1]} />; break
     case 's': view = <Heavy name="sheet" id={p[1]} key={p[1]} />; break
+    case 'p': view = <Heavy name="slides" id={p[1]} key={p[1]} />; break
     case 'admin': view = isAdmin.value ? <Admin /> : <Home />; break
     case 'account': view = <Account />; break
     case 'search': view = <SearchPage />; break

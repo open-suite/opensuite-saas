@@ -34,7 +34,7 @@ type Share struct {
 }
 
 // docKinds are the editors a document can belong to.
-var docKinds = map[string]bool{"doc": true, "sheet": true}
+var docKinds = map[string]bool{"doc": true, "sheet": true, "slides": true}
 
 // docList returns every document the user can open, newest first. A document
 // filed in a folder is also open to whoever can open that folder.
