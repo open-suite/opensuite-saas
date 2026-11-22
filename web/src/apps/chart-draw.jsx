@@ -219,7 +219,10 @@ export function Chart({ chart, data, w, h }) {
         const off = band * (i + 0.5) - group / 2 + (stacked ? 0 : k * bw)
         const rect = horizontal ? { x: a, y: y0 + off, width: len, height: Math.max(1, bw - 1) } : { x: left + off, y: a, width: Math.max(1, bw - 1), height: len }
         body.push(<rect key={`b${i}-${k}`} class="ch-bar" {...rect} rx={Math.min(2, bw / 4)} fill={hue(k)}><title>{tip(s, i)}</title></rect>)
-        if (chart.values && bw > 14) {
+        if (chart.values && stacked) {
+          // Inside its own segment, when there is room for it.
+          if (len > 15 && bw > 14) body.push(<text key={`v${i}-${k}`} class="ch-in" x={horizontal ? a + len / 2 : left + off + bw / 2} y={(horizontal ? y0 + off + bw / 2 : a + len / 2) + 4} text-anchor="middle">{fit(s.texts[i], horizontal ? len : Math.max(bw, 40), 11)}</text>)
+        } else if (chart.values && bw > 14) {
           body.push(horizontal
             ? <text key={`v${i}-${k}`} class="ch-val" x={val(to) + (v >= 0 ? 4 : -4)} y={y0 + off + bw / 2 + 3} text-anchor={v >= 0 ? 'start' : 'end'}>{s.texts[i]}</text>
             : <text key={`v${i}-${k}`} class="ch-val" x={left + off + bw / 2} y={val(to) + (v >= 0 ? -4 : 12)} text-anchor="middle">{fit(s.texts[i], Math.max(bw, 40), 10.5)}</text>)

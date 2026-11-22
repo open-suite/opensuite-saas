@@ -7,7 +7,7 @@
   position: absolute; pointer-events: auto; cursor: default; user-select: none; touch-action: none;
   background: var(--bg); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow-1);
 }
-.chart.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow-1); cursor: move; }
+.chart.on { z-index: 1; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow-1); cursor: move; }
 .chart.moving { opacity: 0.92; box-shadow: 0 0 0 1px var(--accent), var(--shadow-2); }
 .chart svg.ch { display: block; border-radius: var(--radius); }
 .chart-grip { position: absolute; width: 10px; height: 10px; background: var(--bg); border: 2px solid var(--accent); border-radius: 50%; }

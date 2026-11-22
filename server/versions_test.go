@@ -162,7 +162,8 @@ func TestVersionAccessAndCommentRole(t *testing.T) {
 		conn := dial(t, carol, "/api/docs/"+id+"/sync")
 		msg := next(t, conn, msgHello)
 		conn.CloseNow()
-		return msg[len(msg)-1]
+		_, n := readVarint(msg) // the peer id; the byte after it says "may write"
+		return msg[n]
 	}
 	share(doc.ID, "view")
 	denied("a viewer", carol)

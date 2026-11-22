@@ -372,7 +372,7 @@ function Toolbar({ editor, mode, role, onMode, onComment }) {
   const inTable = on('table')
   if (mode === 'view') {
     return (
-      <div class="toolbar" role="toolbar" aria-label="Formatting" onMouseDown={keepFocus}>
+      <div class="toolbar" role="toolbar" aria-label="Formatting" style={{ minHeight: 43 }} onMouseDown={keepFocus}>
         <span class="muted" style={{ padding: '0 6px', fontSize: 13 }}>Reading the document as it would be with every suggestion accepted.</span>
         <ModeSelect mode={mode} role={role} onMode={onMode} />
       </div>

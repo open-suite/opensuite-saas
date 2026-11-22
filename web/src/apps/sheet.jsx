@@ -223,7 +223,14 @@ export default function SheetView({ id }) {
     }
   }
   const addSheet = () => {
-    live.act((m) => m.newSheet())
+    live.act((m) => {
+      m.newSheet()
+      // The engine numbers a new sheet by counting every sheet, hidden ones
+      // included; people count the tabs they can see.
+      const all = m.getWorksheetsProperties()
+      const name = 'Sheet' + all.filter((sh) => sh.state === 'visible').length
+      if (!all.some((sh) => sh.name === name)) m.renameSheet(all.length - 1, name)
+    })
     live.useSheet(live.sheets.length - 1)
   }
   const shown = sheets.map((sh, i) => (sh.state === 'visible' ? i : -1)).filter((i) => i >= 0)

@@ -137,8 +137,8 @@ const painted = (sel) => { const el = document.querySelector(sel); return !!el &
     const colleague = await B.evaluate(() => JSON.parse(localStorage.getItem('os:boot')).user)
 
     const newDoc = async (title, body, shareWithEveryone = true) => {
-      await A.goto(BASE + '/docs')
-      await A.click('text=New document')
+      await A.goto(BASE + '/')
+      await A.click('.quick-btn:has-text("New document")')
       await A.waitForSelector(live)
       created.push('/api/docs/' + A.url().split('/').pop())
       await A.fill('.doc-title', title)
@@ -217,6 +217,19 @@ const painted = (sel) => { const el = document.querySelector(sel); return !!el &
       await A.waitForFunction(painted, live + ' .cmt', { timeout: 8000 })
       ok('comment: reopening brings it back')
 
+      // A second thread may overlap the first; each keeps its own anchor.
+      await selectText(B, 'should publish on')
+      await B.click('[aria-label="Comment"]')
+      await B.fill('.review .rv-compose textarea', 'A second thread, overlapping the first.')
+      await B.click('.review .rv-compose .btn-primary')
+      await A.waitForFunction((sel) => new Set([...document.querySelectorAll(sel)].map((el) => el.dataset.c)).size === 2, live + ' .cmt', { timeout: 8000 })
+      await B.reload()
+      await B.waitForFunction((sel) => new Set([...document.querySelectorAll(sel)].map((el) => el.dataset.c)).size === 2 && document.querySelectorAll('.rv-card').length === 2, live + ' .cmt', { timeout: 8000 })
+      ok('comment: overlapping threads keep separate anchors, also after a reload')
+      await B.click('.rv-card:has-text("A second thread") .rv-entry >> nth=0 >> [aria-label="More"]')
+      await B.click('.rv-card .menu >> text=Delete')
+      await A.waitForFunction(() => document.querySelectorAll('.rv-card').length === 1, null, { timeout: 8000 })
+
       await A.waitForSelector('.rv-card') // the rail opens again by itself
       await A.click('.rv-card .rv-entry >> nth=0 >> [aria-label="More"]')
       await A.click('.rv-card .menu >> text=Delete')
@@ -293,8 +306,8 @@ const painted = (sel) => { const el = document.querySelector(sel); return !!el &
       await newDoc('For comment only', ['Please review this paragraph.'], false)
       const id = A.url().split('/').pop()
       await A.evaluate(async ({ id, user }) => { await fetch('/api/docs/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shares: [{ user, role: 'comment' }] }) }) }, { id, user: colleague.id })
-      await B.goto(BASE + '/docs')
-      await B.waitForSelector('.page-head')
+      await B.goto(BASE + '/')
+      await B.waitForSelector('.rail')
       await B.evaluate(() => fetch('/api/boot').then((r) => r.json()).then((boot) => localStorage.setItem('os:boot', JSON.stringify(boot))))
       await B.goto(A.url())
       await B.waitForFunction((live) => document.querySelector(live)?.textContent.includes('Please review'), live)
@@ -346,8 +359,8 @@ const painted = (sel) => { const el = document.querySelector(sel); return !!el &
       ok('history: a restore is an edit, and Undo reverses it')
       await A.click('[aria-label="Close version history"]')
 
-      await A.goto(BASE + '/docs')
-      await A.click('text=New spreadsheet')
+      await A.goto(BASE + '/')
+      await A.click('.quick-btn:has-text("New spreadsheet")')
       await A.waitForSelector('.toolbar .select')
       created.push('/api/docs/' + A.url().split('/').pop())
       await A.fill('.doc-title', 'Forecast')
@@ -384,8 +397,8 @@ const painted = (sel) => { const el = document.querySelector(sel); return !!el &
     }
 
     if (want('charts')) {
-      await A.goto(BASE + '/docs')
-      await A.click('text=New spreadsheet')
+      await A.goto(BASE + '/')
+      await A.click('.quick-btn:has-text("New spreadsheet")')
       await A.waitForSelector('.toolbar .select')
       created.push('/api/docs/' + A.url().split('/').pop())
       await A.fill('.doc-title', 'Revenue by month')

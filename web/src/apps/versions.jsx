@@ -16,7 +16,8 @@ export default function Versions({ doc, viewing, onView, onRestore, onClose }) {
   const [naming, setNaming] = useState(null) // { id | null, name }
   const base = `/api/docs/${doc.id}/versions`
   const load = () => get(base).then(setList).catch((e) => { setList([]); toast(e.message, 'error') })
-  useEffect(() => { load() }, [doc.id])
+  // Again whenever a past version is left: restoring files a new one.
+  useEffect(() => { load() }, [doc.id, viewing])
 
   const open = async (v) => {
     try {

@@ -162,7 +162,7 @@ function Composer({ initial = '', initialMentions = [], placeholder, action, onS
   )
 }
 
-function Entry({ e, me, canManage, onEdit, onDelete, extra }) {
+function Entry({ e, me, canManage, onEdit, onDelete, deleteLabel = 'Delete', extra }) {
   const [editing, setEditing] = useState(false)
   const own = e.by === me.id
   return (
@@ -177,7 +177,7 @@ function Entry({ e, me, canManage, onEdit, onDelete, extra }) {
           {(own || canManage) && !editing && (
             <Menu align="right" trigger={<IconButton icon={MoreHorizontal} label="More" size={16} class="side-icon" />} items={[
               own && { label: 'Edit', icon: Pencil, onSelect: () => setEditing(true) },
-              { label: 'Delete', icon: Trash2, danger: true, onSelect: onDelete },
+              { label: deleteLabel, icon: Trash2, danger: true, onSelect: onDelete },
             ]} />
           )}
         </div>
@@ -197,7 +197,7 @@ function Thread({ t, me, on, canComment, canManage, ydoc, editor, onPick }) {
   return (
     <div class={cx('rv-card', on && 'on', t.resolved && 'done')} data-rv={t.id} onClick={onPick}>
       {t.range ? <div class="rv-quote ellipsis">{clip(t.range.quote)}</div> : <div class="rv-quote gone">The text this was about has been removed</div>}
-      <Entry e={t} me={me} canManage={canManage} onEdit={(text, m) => editEntry(ydoc, t.id, null, text, m)} onDelete={drop} extra={canComment && (
+      <Entry e={t} me={me} canManage={canManage} onEdit={(text, m) => editEntry(ydoc, t.id, null, text, m)} onDelete={drop} deleteLabel={t.replies.length ? 'Delete thread' : 'Delete'} extra={canComment && (
         t.resolved
           ? <IconButton icon={RotateCcw} label="Reopen" size={16} class="side-icon" onClick={(e) => { e.stopPropagation(); setResolved(ydoc, t.id, me, false) }} />
           : <IconButton icon={Check} label="Resolve" size={16} class="side-icon" onClick={(e) => { e.stopPropagation(); setResolved(ydoc, t.id, me, true) }} />

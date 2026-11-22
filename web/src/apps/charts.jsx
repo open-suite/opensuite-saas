@@ -19,8 +19,14 @@ const icons = { column: ChartColumn, bar: ChartBar, line: ChartLine, area: Chart
 // cell) as a column chart placed beside it, and returns the new chart's id.
 export function insertChart(s) {
   const { ref, headers, labels } = guessChart(s)
-  const x = Math.round(s.colX[Math.min(ref.c2, s.C)] + 24)
-  const y = Math.round(s.rowY[Math.min(ref.r1, s.R) - 1] + 8)
+  let x = Math.round(s.colX[Math.min(ref.c2, s.C)] + 24)
+  let y = Math.round(s.rowY[Math.min(ref.r1, s.R) - 1] + 8)
+  // Never exactly on top of a chart that is already there.
+  const here = readCharts(s).filter((c) => c.sheet === s.sheetId)
+  while (here.some((c) => Math.abs(c.x - x) < 16 && Math.abs(c.y - y) < 16)) {
+    x += 28
+    y += 28
+  }
   return addChart(s, { type: 'column', sheet: s.sheetId, x, y, w: 480, h: 300, headers, labels, legend: 'bottom', title: '' }, ref)
 }
 
