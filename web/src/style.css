@@ -283,11 +283,12 @@ table.table { width: 100%; border-collapse: collapse; }
 .form-error { padding: 9px 12px; border-radius: var(--radius); background: var(--danger-soft); color: var(--danger); font-weight: 550; font-size: 13px; }
 
 /* --- home ------------------------------------------------------------- */
-.quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 22px; }
+.quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 22px; }
 .quick-btn {
-  display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 14px; border-radius: var(--radius-lg);
-  border: 1px solid var(--line); background: var(--bg); font-weight: 600; text-align: left; color: var(--ink);
+  display: flex; align-items: center; gap: 8px; height: 54px; padding: 0 12px; border-radius: var(--radius-lg);
+  border: 1px solid var(--line); background: var(--bg); font-weight: 600; text-align: left; color: var(--ink); white-space: nowrap;
 }
+@media (max-width: 560px) { .quick-btn { white-space: normal; } }
 .quick-btn:hover { border-color: var(--accent); box-shadow: var(--shadow-1); text-decoration: none; }
 .home-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .home-grid .wide { grid-column: 1 / -1; }

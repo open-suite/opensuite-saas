@@ -152,7 +152,7 @@ const files = [
       const res = await fetch(`/api/files/${id}/content`)
       return { type: res.headers.get('content-type'), csp: res.headers.get('content-security-policy'), sniff: res.headers.get('x-content-type-options') }
     }, evilId)
-    if (!direct.type.startsWith('text/plain') || !direct.csp.startsWith('sandbox') || direct.sniff !== 'nosniff') throw new Error('unsafe headers on an uploaded page: ' + JSON.stringify(direct))
+    if (!direct.type.startsWith('text/plain') || !direct.csp.startsWith('sandbox') || !(direct.sniff || '').includes('nosniff')) throw new Error('unsafe headers on an uploaded page: ' + JSON.stringify(direct))
     await A.goto(`${BASE}/api/files/${evilId}/content`)
     if ((await A.evaluate(() => document.contentType)) !== 'text/plain' || (await A.title()) === 'pwned') throw new Error('an uploaded page was rendered as a page')
     await A.goto(folderUrl)

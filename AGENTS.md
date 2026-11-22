@@ -43,6 +43,60 @@ server order when someone else's edit lands in between (`apps/sheet-core.js`).
 A client offers a compacting snapshot only when its state equals a known
 sequence number.
 
+Sync message 10 is plain text from a client with edit rights, for the search
+index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
+
+## The parts added on 2026-11-22
+
+- **Search** (`server/search.go`, `lib/search.js`, `lib/search-sources.js`).
+  The server never reads documents, so any editor that owns a `DocSocket`
+  must set `sock.text = () => <plain text>` or its documents are found by
+  title only. `doc_text` and `doc_fts` are kept by triggers on `docs`; do not
+  write to them elsewhere. User input reaches FTS5 only through `ftsQuery`.
+  A new source is one `addProvider` call; `local` must be synchronous and
+  read memory only, anything async goes in `remote`. Rows never reorder and
+  late results never push the selected row.
+- **Files** (`server/files.go`, `lib/files.js`, `apps/files.jsx`). Uploaded
+  content is untrusted and only ever served through `serveFile`: text of
+  every kind as `text/plain`, unknown types as attachments, `nosniff`, and
+  `Content-Security-Policy: sandbox` (PDF gets `default-src 'none'` without
+  sandbox, because Chrome's viewer will not start inside one). Access is
+  inherited from folders, so a move can grant ownership: `mayMove` is the
+  guard on every move path. A document is filed by `docs.folder_id`. A new
+  kind of document is one line each in `docKinds` (server and `lib/docs.js`)
+  and `kindIcons`. Backups must include `<data>/files`.
+- **Calendar and contacts** (`server/calendar.go`, `lib/calendar.js`,
+  `lib/contacts.js`). They live in the mail engine and go through
+  `/api/mail/jmap` with the same account pinning. `Principal/*` stays
+  refused and `shareWith` is rejected; free/busy is a server endpoint scoped
+  to the caller's organisation. The engine speaks the newer JSCalendar
+  (`recurrenceRule` singular, `calendarAddress`). We write our own
+  invitation mails (raw message: upload, `Email/import`,
+  `EmailSubmission/set`) because the engine's carry its own branding; with
+  `autoAddInvitations` on, the engine files incoming ones and applies
+  answers. `ContactCard/parse` returns only the first card, so vCards are
+  parsed in the browser.
+- **Presentations** (`apps/slides*.js(x)`). A Yjs document; slides and
+  elements are keyed by id and ordered by a number. Never move one by delete
+  and re-insert: that drops what a colleague is typing. An empty deck is
+  seeded with fixed ids, at once only when `isFresh(id)`, so two devices
+  never make two first slides. `frameCss` and `textCss` are shared by the
+  drawn box and the live editor; change them together.
+- **Comments and suggestions** (`apps/doc-comments.js`, `doc-marks.js`).
+  Threads live in the document's own Yjs state. The "comment" role may
+  comment and suggest but the server cannot tell a comment from an edit, so
+  it is a courtesy between colleagues, not a security boundary. "Clear
+  formatting" must not use `unsetAllMarks` (it would strip comment and
+  suggestion marks).
+- **Version history** (`server/versions.go`). A version is the gzipped
+  protocol frames, so it works for any kind. Documents restore as a client
+  edit, as its own undo step (`stopCapturing`): joined to typing from a
+  moment before, one Undo emptied the page. Spreadsheets restore on the
+  server by swapping the log. `Hub.room` and `Hub.release` must be paired.
+- **Charts** (`apps/sheet-charts.js`) are rows in a hidden sheet of the
+  workbook, so they sync, version and undo like cells. Anything that walks
+  worksheets must skip the hidden ones.
+
 ## Engines: facts verified on 2026-11-21
 
 - **Stalwart 1.1.1** has no TOML and no REST admin API any more. All
@@ -109,4 +163,18 @@ sequence number.
 - nginx `include` globs: `opensuite-plain-*.conf` and `opensuite-tls-*.conf`
   must not match each other.
 - Background test tabs never get focus; the checks use a synthetic camera and
-  microphone so no real device is opened.
+  microphone so no real device is opened. They also slow timers to one a
+  second, so effects run late: a check must not assume a shortcut is
+  listening or an effect has run the instant a selector appears, and a
+  screen must not rely on an effect for its first frame.
+- Sign-in is limited to 10 attempts per address per 5 minutes. Running many
+  checks back to back against one deployment hits it; wait, do not raise it.
+- The checks remember the colleague they created per deployment in
+  `tests/.state.json` (`remember()` in `tests/browser.cjs`).
+- `autofocus` does nothing on forms opened after load; focus in a layout
+  effect. Tiptap's `editor.getText()` throws after `destroy()`; read
+  `editor.state.doc`. A numeric CSS custom property in an inline style gets
+  `px` from `lib/px.js`; pass a string.
+- Local development: `dev/mail.sh` then `dev/run.sh <name> <port>`. The
+  service worker registers on https only, so `tests/perf.cjs` needs a
+  server.

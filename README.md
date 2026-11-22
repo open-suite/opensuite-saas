@@ -1,8 +1,8 @@
 # Open Suite
 
-A sovereign office suite that runs on one server: mail, chat, video meetings,
-documents and spreadsheets, with an admin console, behind one sign-in, as one
-app. No containers, no cluster. Hosted for many organisations at once, each
+A sovereign office suite that runs on one server: mail, calendar, contacts,
+chat, video meetings, files, documents, spreadsheets and presentations, with
+search across all of it and an admin console, behind one sign-in, as one app. No containers, no cluster. Hosted for many organisations at once, each
 with its own people, admins and (optionally) its own domain.
 
 This is a ground-up rewrite of the earlier k3s distribution (see
@@ -51,22 +51,24 @@ at that distance, 47 KB). Memory in use for the whole suite: about 500 MB.
 
 | Path | What |
 | --- | --- |
-| `server/` | Go backend. `main.go` routes, `auth.go`, `admin.go`, `docs.go` (sync hub), `mail.go`, `chat.go`, `meet.go`, `tls.go` (ACME), `web.go`, `convert.go` (pandoc). |
-| `web/` | Preact app. `src/lib/` data layers (`store`, `api`, `sync`, `mail`, `matrix`), `src/apps/` screens, `src/sw.js` offline shell. |
+| `server/` | Go backend. `main.go` routes, `auth.go`, `admin.go`, `docs.go` (sync hub), `versions.go` (history), `files.go` (drive), `search.go` (index), `mail.go`, `calendar.go`, `chat.go`, `meet.go`, `tls.go` (ACME), `web.go`, `convert.go` (pandoc). |
+| `web/` | Preact app. `src/lib/` data layers (`store`, `api`, `sync`, `mail`, `calendar`, `contacts`, `files`, `search`, `matrix`), `src/apps/` screens, `src/sw.js` offline shell. |
 | `deploy/` | `deploy.sh` (build and ship), `install.sh` (server side, idempotent), nginx and systemd files, `coexist-k3s.sh` (shared demo box only). |
-| `tests/` | `e2e.cjs` two-person end-to-end run, `perf.cjs` performance budgets. Backend tests are `server/*_test.go`. |
+| `dev/` | `mail.sh` (a loopback mail engine), `run.sh` (build and run a checkout locally). |
+| `tests/` | `e2e.cjs` two-person end-to-end run and one `e2e-<part>.cjs` per newer part; `perf.cjs` and `perf-<part>.cjs` performance budgets. Backend tests are `server/*_test.go`. |
 
 ## Develop
 
 ```sh
-cd server && OS_SECRET=$(openssl rand -hex 32) go run .     # API on :8600, data in ./data
-cd web && npm install && npm run dev                        # app on :5173, proxies /api
+dev/mail.sh                    # once, in its own terminal: mail engine on 127.0.0.1:8446
+dev/run.sh main 8610           # builds and serves http://main.localhost:8610
 cd server && go test ./...
 ```
 
-Without the engines configured (`OS_MATRIX_URL`, `OS_MAIL_URL`, LiveKit keys)
-identity, admin, documents and spreadsheets work; chat, mail and meetings
-show their "being prepared" state.
+`run.sh <name> <port>` gives each checkout its own data and mail domain, so
+several branches can run side by side. Chat and calls need their engines,
+which have no macOS build; those two screens only work on a server. Set
+`OS_DEV_DIR` to choose where local data lives (default `~/.opensuite-dev`).
 
 ## Deploy
 
@@ -98,7 +100,7 @@ OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... node tests/e2
 OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... node tests/perf.cjs
 ```
 
-## What version 1 includes
+## What it includes
 
 - Organisations with owner, administrator and member roles; a free plan
   (5 people, 5 GB, 1 custom domain) and a larger one, switched by the platform
@@ -108,17 +110,34 @@ OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... node tests/pe
   certificates issued automatically.
 - Mail: folders, conversations, search, compose with attachments, reply and
   forward, archive, star, push delivery, remote images blocked until asked.
-- Chat: direct and group conversations, files and images, unread counts,
-  typing notices, a one-click meeting from any conversation.
+- Calendar: month, week, day and agenda views, repeating events, time zones,
+  several calendars, reminders, invitations by mail with one-click answers,
+  colleagues' free and busy times, a meeting link on any event.
+- Contacts: an address book beside the organisation's directory, vCard import
+  and export, address completion in mail and invitations.
+- Chat: direct and group conversations, files and images (from the device or
+  from Files), unread counts, typing notices, a one-click meeting from any
+  conversation.
 - Meet: permanent room links, guests join with no account, screen sharing.
-- Docs: rich-text documents with live cursors and offline editing; import and
-  export of Word, OpenDocument and Markdown; print to PDF.
+- Files: folders, uploads, previews, trash, sharing with colleagues and by
+  public link, a storage quota per organisation. Documents of every kind live
+  in the same folders.
+- Docs: rich-text documents with live cursors and offline editing; comments,
+  suggestions (tracked changes) and version history; import and export of
+  Word, OpenDocument and Markdown; print to PDF.
 - Sheets: formulas, formatting, borders, merges, multiple sheets, live
-  cursors; Excel import and export.
-- Home: recent documents, inbox, conversations and meeting rooms in one view.
+  cursors, charts, version history; Excel import and export.
+- Slides: presentations with text, shapes and pictures, layouts and themes,
+  speaker notes, a presenter view, live collaboration; PowerPoint import and
+  export; print to PDF.
+- Search: one box (Ctrl/Cmd+K or "/") over people, contacts, documents and
+  their contents, files, calendar, mail, chat and meetings.
+- Home: today's agenda, recent documents, inbox, conversations and meeting
+  rooms in one view.
 
-Not in version 1: calendar and contacts (the mail engine already speaks both
-protocols), a file drive, presentations, wiki, payments, mail access from
-other mail apps (IMAP is running but people have no app passwords yet), chat
-federation with other Matrix servers (off by one setting), end-to-end
-encrypted chat, and offline editing of spreadsheets beyond the open session.
+Not included yet: wiki, payments, mail and calendar access from other apps
+(IMAP is running but people have no app passwords yet), chat federation with
+other Matrix servers (off by one setting), end-to-end encrypted chat, offline
+editing of spreadsheets beyond the open session, shared calendars, comments
+on spreadsheet cells, charts in Excel files, tables in presentations, and
+version history for presentations.

@@ -223,15 +223,20 @@ const call = (page, { method, url, body }) => page.evaluate(async ({ method, url
     })
     const top = (title) => A.$eval(`.search-panel .sr-row:has-text("${title}")`, (el) => Math.round(el.getBoundingClientRect().top))
     await ask(A, tag)
-    await A.keyboard.press('ArrowDown')
-    await A.keyboard.press('ArrowDown')
-    let at = (await rows(A)).find((r) => r.on)
+    let at
+    for (let i = 0; i < 8 && at?.group !== 'Meetings'; i++) { // further down when chat has a match too
+      await A.keyboard.press('ArrowDown')
+      at = (await rows(A)).find((r) => r.on)
+    }
     if (at?.group !== 'Meetings') throw new Error('expected the selection on the meeting: ' + JSON.stringify(await rows(A)))
     const before = await top('Airship standup')
     await settled(A)
     if (await has(A, 'Mail', subject)) throw new Error('mail was inserted above the selected row')
     if ((await top('Airship standup')) !== before) throw new Error('the selected row moved')
-    await A.keyboard.press('ArrowUp')
+    for (let i = 0; i < 8 && at?.group !== 'Documents'; i++) { // up past any chat match, to above where mail goes
+      await A.keyboard.press('ArrowUp')
+      at = (await rows(A)).find((r) => r.on)
+    }
     await arrives(A, 'Mail', subject)
     at = (await rows(A)).find((r) => r.on)
     if (at?.group !== 'Documents') throw new Error('the selection should now be on a document: ' + JSON.stringify(at))
@@ -278,7 +283,12 @@ const call = (page, { method, url, body }) => page.evaluate(async ({ method, url
 
     await A.goto(BASE + '/')
     await A.waitForSelector('.quick')
-    await A.keyboard.press('/')
+    // A background tab runs effects up to a second late, so the shortcut may
+    // not be listening the instant the page has painted.
+    for (let i = 0; i < 4 && !(await A.$('.search-panel .search-input:focus')); i++) {
+      await A.keyboard.press('/')
+      await A.waitForSelector('.search-panel .search-input:focus', { timeout: 2500 }).catch(() => {})
+    }
     await A.waitForSelector('.search-panel .search-input:focus')
     await A.keyboard.type('a/b')
     if ((await A.inputValue('.search-panel .search-input')) !== 'a/b') throw new Error('typing in the palette lost a character')

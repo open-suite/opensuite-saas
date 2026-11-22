@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { Plus, Paperclip, SendHorizontal, Video, MoreHorizontal, UserPlus, LogOut, MessageSquare, ArrowLeft, FileDown } from 'lucide-preact'
+import { Plus, Paperclip, FolderOpen, SendHorizontal, Video, MoreHorizontal, UserPlus, LogOut, MessageSquare, ArrowLeft, FileDown } from 'lucide-preact'
+import { pickFromFiles, fetchFile } from '../lib/files.js'
 import './chat.css'
 import { boot, people, peopleByMx, user, toast } from '../lib/store.js'
 import { parts, navigate } from '../lib/router.js'
@@ -143,6 +144,17 @@ function Composer({ room }) {
   const attach = async (files) => {
     for (const f of files) await sendFile(room.id, f).catch(() => toast("That file couldn't be sent.", 'error'))
   }
+  // A file from the drive goes into the conversation as a copy, so everyone
+  // in it can open it whatever the original is shared with.
+  const fromFiles = async () => {
+    const node = await pickFromFiles({ title: 'Send a file', action: 'Send' })
+    if (!node) return
+    try {
+      await attach([await fetchFile(node)])
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+  }
   return (
     <div class="composer" onDrop={(e) => { if (e.dataTransfer?.files?.length) { e.preventDefault(); attach(e.dataTransfer.files) } }} onDragOver={(e) => e.preventDefault()}>
       <textarea ref={ta} rows={1} placeholder={'Message ' + roomTitle(room)} value={text}
@@ -150,6 +162,7 @@ function Composer({ room }) {
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit() } }}
         onPaste={(e) => { const f = [...(e.clipboardData?.files || [])]; if (f.length) { e.preventDefault(); attach(f) } }} />
       <IconButton icon={Paperclip} label="Attach a file" onClick={() => file.current.click()} />
+      <IconButton icon={FolderOpen} label="Send from Files" onClick={fromFiles} />
       <input ref={file} type="file" multiple hidden onChange={(e) => { attach([...e.target.files]); e.target.value = '' }} />
       <IconButton icon={SendHorizontal} label="Send" class={text.trim() ? 'on' : ''} onClick={submit} />
     </div>
