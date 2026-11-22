@@ -1,17 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import {
   ArrowLeft, Undo2, Redo2, Bold, Italic, Underline, Strikethrough, Baseline, PaintBucket, AlignLeft, AlignCenter, AlignRight,
-  Grid2x2, Users, MoreHorizontal, FileDown, Trash2, Plus, FileX2, Rows3, Columns3, Merge, Pencil,
+  Grid2x2, Users, MoreHorizontal, FileDown, Trash2, Plus, FileX2, Rows3, Columns3, Merge, Pencil, ChartColumn, History,
 } from 'lucide-preact'
 import './sheet.css'
 import { user, docs, upsertDoc, toast, confirmed } from '../lib/store.js'
 import { navigate } from '../lib/router.js'
-import { refreshBoot } from '../lib/api.js'
+import { post, refreshBoot } from '../lib/api.js'
 import { renameDoc, trashDoc } from '../lib/docs.js'
 import { cx, debounce, download } from '../lib/util.js'
 import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkColors, markColors, keepFocus } from '../ui.jsx'
 import { ShareDialog } from './docs.jsx'
 import { Sheet, colName, prewarmSheets } from './sheet-core.js'
+import { toXlsx } from './sheet-charts.js'
+import { ChartLayer, ChartPanel, insertChart, readCharts, removeChart } from './charts.jsx'
 
 export { xlsxToSnapshot } from './sheet-core.js'
 
@@ -30,7 +32,7 @@ const formats = [
   ['hh:mm', 'Time'],
 ]
 
-function Toolbar({ s }) {
+function Toolbar({ s, onChart }) {
   const st = s.style()
   const f = st.font || {}
   const align = st.alignment?.horizontal
@@ -85,6 +87,46 @@ function Toolbar({ s }) {
         { divider: true },
         { label: cols > 1 ? `Delete ${cols} columns` : 'Delete column', danger: true, disabled: cols > 500, onSelect: () => s.act((m) => m.deleteColumns(s.sheet, s.sel.c1, cols)) },
       ]} />
+      <span class="sep" />
+      <IconButton icon={ChartColumn} label="Insert chart" onClick={onChart} />
+    </div>
+  )
+}
+
+function Tabs({ s }) {
+  return (
+    <div class="sheet-tabs">
+      {s.sheets.map((sh, i) => sh.state === 'visible' && <button key={sh.sheet_id} class={cx('sheet-tab', s.sheet === i && 'on')} onClick={() => s.sheet !== i && s.useSheet(i)}>{sh.name}</button>)}
+    </div>
+  )
+}
+
+// A past version: the same grid, read-only, laid over the live one.
+function PastGrid({ id, me, title, state }) {
+  const wrap = useRef()
+  const canvas = useRef()
+  const scroll = useRef()
+  const spacer = useRef()
+  const ctl = useRef(null)
+  const [tick, bump] = useState(0)
+  useLayoutEffect(() => {
+    const s = new Sheet({ id, me, title, frozen: state, onChange: () => bump((n) => n + 1) })
+    ctl.current = s
+    s.open(wrap.current, canvas.current, scroll.current, spacer.current)
+    return () => {
+      ctl.current = null
+      s.close()
+    }
+  }, [state])
+  const s = ctl.current?.model ? ctl.current : null
+  return (
+    <div class="past-grid">
+      <div class="grid-wrap" ref={wrap} tabIndex={0} onKeyDown={(e) => e.target === wrap.current && s?.onKey(e)}>
+        <canvas ref={canvas} />
+        <div class="grid-scroll" ref={scroll}><div ref={spacer} /></div>
+        {s && <ChartLayer s={s} tick={tick} selected={null} onSelect={() => {}} onEdit={() => {}} />}
+      </div>
+      {s ? <Tabs s={s} /> : <div class="sheet-tabs" />}
     </div>
   )
 }
@@ -103,6 +145,10 @@ export default function SheetView({ id }) {
   const [tick, bump] = useState(0)
   const [share, setShare] = useState(false)
   const [renaming, setRenaming] = useState(null)
+  const [chartSel, setChartSel] = useState(null) // the selected chart's id
+  const [chartEdit, setChartEdit] = useState(false) // its options panel is open
+  const [history, setHistory] = useState(null) // the version panel, once asked for
+  const [past, setPast] = useState(null) // { version, state }: a past version on screen
 
   useEffect(() => {
     if (!doc) refreshBoot()
@@ -124,6 +170,8 @@ export default function SheetView({ id }) {
       const d = docs.value.find((x) => x.id === id)
       if (d && d.title !== title) upsertDoc({ ...d, title })
     }
+    // Clicking a cell lets go of a selected chart.
+    s.onGridDown = () => setChartSel(null)
     ctl.current = s
     s.open(wrap.current, canvas.current, scroll.current, spacer.current)
     bump((n) => n + 1) // draw the toolbar before this frame is painted
@@ -169,7 +217,7 @@ export default function SheetView({ id }) {
   const ref = live ? (live.sel.r1 === live.sel.r2 && live.sel.c1 === live.sel.c2 ? colName(live.sel.col) + live.sel.row : `${colName(live.sel.c1)}${live.sel.r1}:${colName(Math.min(live.sel.c2, 16384))}${Math.min(live.sel.r2, 1048576)}`) : ''
   const exportXlsx = () => {
     try {
-      download(new Blob([live.model.toXlsx()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${doc.title || 'Untitled'}.xlsx`)
+      download(new Blob([toXlsx(live.model)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${doc.title || 'Untitled'}.xlsx`)
     } catch (e) {
       toast("This spreadsheet couldn't be exported.", 'error')
     }
@@ -178,12 +226,56 @@ export default function SheetView({ id }) {
     live.act((m) => m.newSheet())
     live.useSheet(live.sheets.length - 1)
   }
+  const shown = sheets.map((sh, i) => (sh.state === 'visible' ? i : -1)).filter((i) => i >= 0)
+  const dropSheet = (i) => {
+    // Move to a visible neighbour first, then find it again once the
+    // positions have shifted.
+    const at = shown.indexOf(i)
+    const stay = sheets[shown[at > 0 ? at - 1 : 1]].sheet_id
+    const index = () => Math.max(0, live.sheets.findIndex((sh) => sh.sheet_id === stay))
+    live.useSheet(index())
+    live.act((m) => m.deleteSheet(i))
+    live.useSheet(index())
+  }
+
+  const canEdit = doc.role === 'owner' || doc.role === 'edit'
+  const chart = live && chartSel ? readCharts(live).find((c) => c.id === chartSel) : null
+  const newChart = () => {
+    if (live.draft !== null) live.commit()
+    setHistory(null)
+    setChartSel(insertChart(live))
+    setChartEdit(true)
+  }
+  const dropChart = () => {
+    removeChart(live, chartSel)
+    setChartSel(null)
+    wrap.current.focus()
+  }
+  const gridKeys = (e) => {
+    if (e.target !== wrap.current || !live) return
+    if (chart && (e.key === 'Delete' || e.key === 'Backspace') && live.canEdit) { e.preventDefault(); return dropChart() }
+    if (chart && e.key === 'Escape') return setChartSel(null)
+    live.onKey(e)
+  }
+  const openHistory = async () => {
+    const m = await import('./versions.jsx')
+    setChartEdit(false)
+    setHistory(() => m)
+  }
+  const HistoryPanel = history?.default
+  const VersionBar = history?.VersionBar
+  // The server swaps in the old state and sends it to everyone connected,
+  // this tab included; what was there is filed as a version first.
+  const restore = async (version) => {
+    await post(`/api/docs/${id}/versions/${version.id}/restore`)
+    setPast(null)
+  }
 
   return (
     <div class="sheet-view">
       <div class="doc-bar">
         <IconButton icon={ArrowLeft} label="All docs" onClick={() => navigate('/docs')} />
-        <input class="doc-title" aria-label="Title" placeholder="Untitled" value={doc.title} disabled={doc.role === 'view'}
+        <input class="doc-title" aria-label="Title" placeholder="Untitled" value={doc.title} disabled={!canEdit}
           onInput={(e) => { upsertDoc({ ...doc, title: e.target.value }); rename(doc, e.target.value) }}
           onKeyDown={(e) => e.key === 'Enter' && wrap.current.focus()} />
         <span class="save-state">{status}</span>
@@ -191,41 +283,54 @@ export default function SheetView({ id }) {
         <span class="presence">{others.slice(0, 5).map((u) => <span key={u.id} title={u.name}><Avatar name={u.name} id={u.id} size={28} /></span>)}</span>
         <Button icon={Users} kind={doc.access === 'org' || doc.shares?.length ? 'default' : 'primary'} onClick={() => setShare(true)}>Share</Button>
         <Menu align="right" trigger={<IconButton icon={MoreHorizontal} label="More" />} items={[
+          canEdit && { label: 'Version history', icon: History, disabled: !live, onSelect: openHistory },
           { label: 'Download as Excel (.xlsx)', icon: FileDown, disabled: !live, onSelect: exportXlsx },
           doc.role === 'owner' && { divider: true },
           doc.role === 'owner' && { label: 'Move to trash', icon: Trash2, danger: true, onSelect: () => { trashDoc(doc); navigate('/docs') } },
         ]} />
       </div>
-      {live && live.canEdit ? <Toolbar s={live} tick={tick} /> : <div class="toolbar" style={{ minHeight: 43 }} />}
-      <div class="formula-bar">
-        <div class="ref">{ref}</div>
-        <span class="fx">fx</span>
-        <input ref={barInput} aria-label="Cell contents" spellcheck={false} disabled={!live?.canEdit}
-          value={live ? (editing ? live.draft : live.content()) : ''}
-          onFocus={() => live && !editing && live.startEdit()}
-          onInput={(e) => live.setDraft(e.target.value)}
-          onKeyDown={editKeys} />
-      </div>
-      <div class="grid-wrap" ref={wrap} tabIndex={0} onKeyDown={(e) => e.target === wrap.current && live?.onKey(e)}>
-        <canvas ref={canvas} />
-        <div class="grid-scroll" ref={scroll}><div ref={spacer} /></div>
-        {editing && (
-          <input ref={cellInput} class="cell-editor" spellcheck={false} value={live.draft}
-            style={{ left: Math.max(rect.x, 46), top: Math.max(rect.y, 24), height: rect.h + 1, width: Math.max(rect.w + 1, Math.min(600, live.draft.length * 8 + 24)) }}
+      {past && VersionBar && <VersionBar version={past.version} onBack={() => setPast(null)} onRestore={() => restore(past.version).then(() => toast('Version restored'), (e) => toast(e.message, 'error'))} />}
+      {!past && (live && live.canEdit ? <Toolbar s={live} tick={tick} onChart={newChart} /> : <div class="toolbar" style={{ minHeight: 43 }} />)}
+      {!past && (
+        <div class="formula-bar">
+          <div class="ref">{ref}</div>
+          <span class="fx">fx</span>
+          <input ref={barInput} aria-label="Cell contents" spellcheck={false} disabled={!live?.canEdit}
+            value={live ? (editing ? live.draft : live.content()) : ''}
+            onFocus={() => live && !editing && live.startEdit()}
             onInput={(e) => live.setDraft(e.target.value)}
             onKeyDown={editKeys} />
-        )}
-      </div>
-      <div class="sheet-tabs">
-        {sheets.map((sh, i) => sh.state === 'visible' && (
-          <Menu key={sh.sheet_id} align="up" trigger={
-            <button class={cx('sheet-tab', live.sheet === i && 'on')} onClick={(e) => { if (live.sheet !== i) { e.stopPropagation(); live.useSheet(i) } }}>{sh.name}</button>
-          } items={[
-            { label: 'Rename', icon: Pencil, onSelect: () => setRenaming({ i, name: sh.name }) },
-            { label: 'Delete sheet', icon: Trash2, danger: true, disabled: sheets.length < 2, onSelect: () => { live.act((m) => m.deleteSheet(i)); live.useSheet(Math.max(0, i - 1)) } },
-          ]} />
-        ))}
-        {live?.canEdit && <IconButton icon={Plus} label="Add sheet" onClick={addSheet} />}
+        </div>
+      )}
+      <div class="sheet-body">
+        <div class="sheet-main">
+          <div class="grid-wrap" ref={wrap} tabIndex={0} onKeyDown={gridKeys}>
+            <canvas ref={canvas} />
+            <div class="grid-scroll" ref={scroll}><div ref={spacer} /></div>
+            {live && <ChartLayer s={live} tick={tick} selected={chartSel} onSelect={setChartSel} onEdit={(cid) => { setChartSel(cid); setHistory(null); setChartEdit(true) }} />}
+            {editing && (
+              <input ref={cellInput} class="cell-editor" spellcheck={false} value={live.draft}
+                style={{ left: Math.max(rect.x, 46), top: Math.max(rect.y, 24), height: rect.h + 1, width: Math.max(rect.w + 1, Math.min(600, live.draft.length * 8 + 24)) }}
+                onInput={(e) => live.setDraft(e.target.value)}
+                onKeyDown={editKeys} />
+            )}
+          </div>
+          <div class="sheet-tabs">
+            {sheets.map((sh, i) => sh.state === 'visible' && (
+              <Menu key={sh.sheet_id} align="up" trigger={
+                <button class={cx('sheet-tab', live.sheet === i && 'on')} onClick={(e) => { if (live.sheet !== i) { e.stopPropagation(); live.useSheet(i) } }}>{sh.name}</button>
+              } items={[
+                { label: 'Rename', icon: Pencil, onSelect: () => setRenaming({ i, name: sh.name }) },
+                { label: 'Delete sheet', icon: Trash2, danger: true, disabled: shown.length < 2, onSelect: () => dropSheet(i) },
+              ]} />
+            ))}
+            {live?.canEdit && <IconButton icon={Plus} label="Add sheet" onClick={addSheet} />}
+          </div>
+          {past && <PastGrid id={id} me={me} title={doc.title} state={past.state} />}
+        </div>
+        {HistoryPanel
+          ? <HistoryPanel doc={doc} viewing={past?.version.id || null} onView={(version, state) => setPast(version ? { version, state } : null)} onRestore={restore} onClose={() => { setHistory(null); setPast(null) }} />
+          : chartEdit && chart && live.canEdit && <ChartPanel s={live} chart={chart} tick={tick} onClose={() => setChartEdit(false)} onDelete={dropChart} />}
       </div>
       {share && <ShareDialog doc={doc} onClose={() => setShare(false)} />}
       {renaming && (
