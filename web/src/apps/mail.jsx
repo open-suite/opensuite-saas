@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
   Inbox, Send, FileEdit, Archive, Trash2, ShieldAlert, Folder, PenSquare, Search, Reply, ReplyAll, Forward, Star,
-  MailOpen, Paperclip, X, ArrowLeft, Image as ImageIcon, Bold, Italic, List, Mail as MailIcon,
+  MailOpen, Paperclip, X, ArrowLeft, Image as ImageIcon, Bold, Italic, List, Mail as MailIcon, FolderDown, FolderOpen,
 } from 'lucide-preact'
+import { saveAttachment, attachFile, pickFromFiles } from '../lib/files.js'
 import './mail.css'
 import { people, toast, boot } from '../lib/store.js'
 import { query, navigate } from '../lib/router.js'
@@ -136,9 +137,12 @@ function Message({ email, open, onToggle }) {
       {open && files.length > 0 && (
         <div class="atts">
           {files.map((a) => (
-            <a class="att" key={a.blobId} href={`/api/mail/blob/${a.blobId}/${encodeURIComponent(a.name || 'attachment')}?type=${encodeURIComponent(a.type)}&dl=1`} download={a.name}>
-              <Paperclip size={14} /><span class="ellipsis">{a.name || 'attachment'}</span><span class="muted">{bytes(a.size || 0)}</span>
-            </a>
+            <span class="row" style={{ gap: 2 }} key={a.blobId}>
+              <a class="att" href={`/api/mail/blob/${a.blobId}/${encodeURIComponent(a.name || 'attachment')}?type=${encodeURIComponent(a.type)}&dl=1`} download={a.name}>
+                <Paperclip size={14} /><span class="ellipsis">{a.name || 'attachment'}</span><span class="muted">{bytes(a.size || 0)}</span>
+              </a>
+              <IconButton icon={FolderDown} label="Save to Files" onClick={() => saveAttachment(a).then((n) => toast(`Saved "${n.name}" to Files`), (e) => toast(e.message, 'error'))} />
+            </span>
           ))}
         </div>
       )}
@@ -186,6 +190,19 @@ function Compose({ init, onClose }) {
         setFiles((x) => x.filter((y) => y !== tmp))
         toast(e.message, 'error')
       }
+    }
+  }
+  const attachFromFiles = async () => {
+    const node = await pickFromFiles({ title: 'Attach from Files', action: 'Attach' })
+    if (!node) return
+    const tmp = { name: node.name, size: node.size, uploading: true }
+    setFiles((x) => [...x, tmp])
+    try {
+      const up = await attachFile(node)
+      setFiles((x) => x.map((y) => (y === tmp ? up : y)))
+    } catch (e) {
+      setFiles((x) => x.filter((y) => y !== tmp))
+      toast(e.message, 'error')
     }
   }
   const submit = async () => {
@@ -245,6 +262,7 @@ function Compose({ init, onClose }) {
         <IconButton icon={Italic} label="Italic" onClick={cmd('italic')} />
         <IconButton icon={List} label="Bulleted list" onClick={cmd('insertUnorderedList')} />
         <IconButton icon={Paperclip} label="Attach files" onClick={() => fileInput.current.click()} />
+        <IconButton icon={FolderOpen} label="Attach from Files" onClick={attachFromFiles} />
         <input ref={fileInput} type="file" multiple hidden onChange={(e) => { attach(e.target.files); e.target.value = '' }} />
         <span class="grow" />
         <IconButton icon={Trash2} label="Discard" onClick={() => close(true)} />

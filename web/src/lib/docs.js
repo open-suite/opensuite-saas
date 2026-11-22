@@ -3,15 +3,23 @@ import { api, post, patch, del } from './api.js'
 import { navigate } from './router.js'
 import { newId, newMeetCode } from './util.js'
 
-export const docPath = (d) => (d.kind === 'sheet' ? '/s/' : '/d/') + d.id
+// The editors. A new kind of document is one more line here (and its icon in
+// apps/docs.jsx): the drive, the "New" menu and links all read this list.
+export const docKinds = {
+  doc: { path: '/d/', name: 'Document', create: 'New document' },
+  sheet: { path: '/s/', name: 'Spreadsheet', create: 'New spreadsheet' },
+}
+
+export const docPath = (d) => (docKinds[d.kind]?.path || '/d/') + d.id
 
 // createDoc opens a new document at once: the id is minted here, the view
 // starts on local state, and the server learns about it in the background.
-export function createDoc(kind, { title = '', snapshot } = {}) {
+// folder is where it is filed ('' is the top level of the person's files).
+export function createDoc(kind, { title = '', snapshot, folder = '' } = {}) {
   const t = Math.floor(Date.now() / 1000)
-  const doc = { id: newId(14), kind, title, access: 'private', owner: user.value.id, role: 'owner', created: t, updated: t, shares: [] }
+  const doc = { id: newId(14), kind, title, folder, access: 'private', owner: user.value.id, role: 'owner', created: t, updated: t, shares: [] }
   upsertDoc(doc)
-  const saved = post('/api/docs', { id: doc.id, kind, title, snapshot }).catch((e) => {
+  const saved = post('/api/docs', { id: doc.id, kind, title, snapshot, folder }).catch((e) => {
     removeDoc(doc.id)
     toast(e.message, 'error')
     throw e
@@ -25,9 +33,17 @@ export function createDoc(kind, { title = '', snapshot } = {}) {
 const creating = new Map()
 export const whenCreated = (id) => creating.get(id) || Promise.resolve()
 
-export function openNew(kind) {
-  const { doc } = createDoc(kind)
+export function openNew(kind, folder = '') {
+  const { doc } = createDoc(kind, { folder })
   navigate(docPath(doc))
+}
+
+export async function moveDoc(doc, folder) {
+  upsertDoc({ ...doc, folder })
+  await patch('/api/docs/' + doc.id, { folder }).catch((e) => {
+    upsertDoc(doc)
+    toast(e.message, 'error')
+  })
 }
 
 export async function renameDoc(doc, title) {

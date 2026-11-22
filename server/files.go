@@ -775,7 +775,10 @@ func (s *Server) handlePublicInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	var orgName string
 	s.r.QueryRow(`SELECT o.name FROM orgs o JOIN nodes n ON n.org_id = o.id WHERE n.id = ?`, root.ID).Scan(&orgName)
-	out := map[string]any{"root": publicView(root), "at": publicView(at), "org": orgName}
+	out := map[string]any{"root": publicView(root), "at": publicView(at), "org": orgName, "parent": ""}
+	if at.ID != root.ID && at.Parent != root.ID {
+		out["parent"] = at.Parent // a folder inside the linked one
+	}
 	if at.Kind == "folder" {
 		items := []publicItem{}
 		rows, err := s.r.Query(`SELECT `+nodeCols+` FROM nodes n WHERE n.parent_id = ? AND n.trashed = 0 ORDER BY n.kind DESC, n.name COLLATE NOCASE LIMIT 5000`, at.ID)

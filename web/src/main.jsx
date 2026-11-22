@@ -2,7 +2,7 @@ import './lib/px.js'
 import { render } from 'preact'
 import { useEffect } from 'preact/hooks'
 import { signal } from '@preact/signals'
-import { Home as HomeIcon, Mail as MailIcon, MessageSquare, Video, FileText, Settings, LogOut, User } from 'lucide-preact'
+import { Home as HomeIcon, Mail as MailIcon, MessageSquare, Video, FolderOpen, Settings, LogOut, User } from 'lucide-preact'
 import './style.css'
 import { boot, user, isAdmin, unread, confirmed } from './lib/store.js'
 import { path, parts, navigate } from './lib/router.js'
@@ -14,7 +14,9 @@ import { startMail } from './lib/mail.js'
 import { Avatar, Logo, Menu, Toasts } from './ui.jsx'
 import { Login, Signup, SetPassword } from './apps/auth.jsx'
 import { Home } from './apps/home.jsx'
-import { Docs } from './apps/docs.jsx'
+import { Drive, FilePicker } from './apps/files.jsx'
+import { PublicLink } from './apps/public.jsx'
+import { startFiles } from './lib/files.js'
 import { Mail } from './apps/mail.jsx'
 import { Chat } from './apps/chat.jsx'
 import { MeetHome } from './apps/meet.jsx'
@@ -65,7 +67,7 @@ function Rail({ section }) {
       {link('/mail', 'mail', MailIcon, 'Mail', unread.value.mail)}
       {link('/chat', 'chat', MessageSquare, 'Chat', unread.value.chat)}
       {link('/meet', 'meet', Video, 'Meet')}
-      {link('/docs', 'docs', FileText, 'Docs')}
+      {link('/files', 'docs', FolderOpen, 'Files')}
       <div class="rail-spacer" />
       {isAdmin.value && link('/admin', 'admin', Settings, 'Admin')}
       <Menu
@@ -91,6 +93,7 @@ function App() {
     if (!u) return
     startChat()
     startMail()
+    startFiles()
     idle(() => Object.keys(heavy).forEach(load))
   }, [u?.id, b?.chat?.ready, b?.mail?.ready])
 
@@ -100,6 +103,9 @@ function App() {
     return <><Heavy name="room" code={p[1]} /><Toasts /></>
   }
 
+  // So does a public link to a file or folder.
+  if (p[0] === 'f' && p[1]) return <><PublicLink token={p[1]} at={p[2]} /><Toasts /></>
+
   if (!u) {
     // Nothing known yet about this visitor: wait for the server rather than
     // flash a sign-in form at someone who is signed in.
@@ -108,14 +114,14 @@ function App() {
   }
   if (u.mustChange) return <><SetPassword /><Toasts /></>
 
-  const section = { d: 'docs', s: 'docs', account: '' }[p[0]] ?? (p[0] || 'home')
+  const section = { d: 'docs', s: 'docs', files: 'docs', account: '' }[p[0]] ?? (p[0] || 'home')
   let view
   switch (p[0]) {
     case undefined: view = <Home />; break
     case 'mail': view = <Mail />; break
     case 'chat': view = <Chat />; break
     case 'meet': view = <MeetHome />; break
-    case 'docs': view = <Docs />; break
+    case 'files': case 'docs': view = <Drive />; break
     case 'd': view = <Heavy name="editor" id={p[1]} key={p[1]} />; break
     case 's': view = <Heavy name="sheet" id={p[1]} key={p[1]} />; break
     case 'admin': view = isAdmin.value ? <Admin /> : <Home />; break
@@ -129,6 +135,7 @@ function App() {
         {!online.value && <div class="offline-bar">You're offline. Open Suite keeps working and will sync when you're back.</div>}
         {view}
       </main>
+      <FilePicker />
       <Toasts />
     </div>
   )

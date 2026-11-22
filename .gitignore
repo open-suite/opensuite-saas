@@ -7,3 +7,4 @@ server/data/
 *.db-shm
 .DS_Store
 tests/.state.json
+tests/.state-*.json

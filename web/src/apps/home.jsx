@@ -38,7 +38,7 @@ export function Home() {
         </div>
         <div class="home-grid">
           <section class="card wide">
-            <div class="card-head"><h2>Recent documents</h2><a href="/docs">All docs</a></div>
+            <div class="card-head"><h2>Recent documents</h2><a href="/files">All files</a></div>
             {recent.length === 0 ? <Empty icon={FileText} title="Nothing here yet" text="Documents and spreadsheets you open appear here." /> : recent.map((d) => (
               <a class="list-row" href={docPath(d)} key={d.id}>
                 <KindIcon kind={d.kind} />
