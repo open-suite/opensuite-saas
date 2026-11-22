@@ -20,7 +20,7 @@ const KEEP = 60 // events per room kept on the device
 const me = () => boot.value?.chat?.userId
 const base = '/_matrix/client/v3'
 
-async function mx(method, path, body, raw) {
+export async function mx(method, path, body, raw) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const token = boot.value?.chat?.token
     const res = await fetch(path.startsWith('/_matrix') ? path : base + path, {

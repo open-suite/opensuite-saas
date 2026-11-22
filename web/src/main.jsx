@@ -20,6 +20,7 @@ import { Chat } from './apps/chat.jsx'
 import { MeetHome } from './apps/meet.jsx'
 import { Admin } from './apps/admin.jsx'
 import { Account } from './apps/account.jsx'
+import { SearchPalette, SearchPage, SearchButton } from './apps/search.jsx'
 
 // The three heavy engines load on their own and are fetched in the
 // background right after start, so opening one never waits on a download.
@@ -61,6 +62,7 @@ function Rail({ section }) {
   return (
     <nav class="rail" aria-label="Open Suite">
       <a href="/" class="rail-logo" aria-label="Home"><Logo size={32} /></a>
+      <SearchButton on={section === 'search'} />
       {link('/', 'home', HomeIcon, 'Home')}
       {link('/mail', 'mail', MailIcon, 'Mail', unread.value.mail)}
       {link('/chat', 'chat', MessageSquare, 'Chat', unread.value.chat)}
@@ -120,6 +122,7 @@ function App() {
     case 's': view = <Heavy name="sheet" id={p[1]} key={p[1]} />; break
     case 'admin': view = isAdmin.value ? <Admin /> : <Home />; break
     case 'account': view = <Account />; break
+    case 'search': view = <SearchPage />; break
     default: view = <Home />
   }
   return (
@@ -129,6 +132,7 @@ function App() {
         {!online.value && <div class="offline-bar">You're offline. Open Suite keeps working and will sync when you're back.</div>}
         {view}
       </main>
+      <SearchPalette />
       <Toasts />
     </div>
   )
