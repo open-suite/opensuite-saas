@@ -357,6 +357,32 @@ func (s *Server) placeIn(u *User, parent string) (int, string) {
 	return 0, ""
 }
 
+// topFolder is the outermost folder around a node ("" for no folder).
+func (s *Server) topFolder(id string) string {
+	top := id
+	for depth := 0; id != "" && depth <= maxNodeDepth+1; depth++ {
+		top = id
+		if s.r.QueryRow(`SELECT parent_id FROM nodes WHERE id = ?`, id).Scan(&id) != nil {
+			break
+		}
+	}
+	return top
+}
+
+// mayMove decides whether something may go from one folder to another.
+// Whoever owns it may put it anywhere they can add to. Someone who can only
+// edit it may rearrange it inside the shared folder it lives in, but not
+// carry it off into a folder of their own, where they would come to own it.
+func (s *Server) mayMove(u *User, role, owner, from, to string) (int, string) {
+	if to == "" && owner != u.ID {
+		return 403, "Only the owner can move this out of the shared folder."
+	}
+	if role != "owner" && (from == "" || s.topFolder(from) != s.topFolder(to)) {
+		return 403, "Only the owner can move this out of the shared folder."
+	}
+	return s.placeIn(u, to)
+}
+
 func (s *Server) nodeDepth(id string) int {
 	d := 0
 	for id != "" && d <= maxNodeDepth+1 {
@@ -505,11 +531,7 @@ func (s *Server) handleNodeUpdate(w http.ResponseWriter, r *http.Request, u *Use
 	}
 	if in.Parent != nil && *in.Parent != n.Parent {
 		dest := *in.Parent
-		if dest == "" && n.Owner != u.ID {
-			fail(w, 403, "Only the owner can move this out of the shared folder.")
-			return
-		}
-		if code, msg := s.placeIn(u, dest); code != 0 {
+		if code, msg := s.mayMove(u, role, n.Owner, n.Parent, dest); code != 0 {
 			fail(w, code, msg)
 			return
 		}

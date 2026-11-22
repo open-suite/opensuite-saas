@@ -177,17 +177,15 @@ func (s *Server) handleDocUpdate(w http.ResponseWriter, r *http.Request, u *User
 	if in.Folder != nil {
 		// Filing a document somewhere else: into a folder the caller may add
 		// to, or back to the top level of whoever owns it.
-		var owner string
-		s.r.QueryRow(`SELECT owner_id FROM docs WHERE id = ?`, id).Scan(&owner)
-		if *in.Folder == "" && owner != u.ID {
-			fail(w, 403, "Only the owner can move this out of the shared folder.")
-			return
+		var owner, from string
+		s.r.QueryRow(`SELECT owner_id, folder_id FROM docs WHERE id = ?`, id).Scan(&owner, &from)
+		if from != *in.Folder {
+			if code, msg := s.mayMove(u, role, owner, from, *in.Folder); code != 0 {
+				fail(w, code, msg)
+				return
+			}
+			s.w.Exec(`UPDATE docs SET folder_id = ? WHERE id = ?`, *in.Folder, id)
 		}
-		if code, msg := s.placeIn(u, *in.Folder); code != 0 {
-			fail(w, code, msg)
-			return
-		}
-		s.w.Exec(`UPDATE docs SET folder_id = ? WHERE id = ?`, *in.Folder, id)
 	}
 	if in.Title != nil {
 		title := strings.TrimSpace(*in.Title)

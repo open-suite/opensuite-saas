@@ -237,7 +237,10 @@ export function canMoveInto(list, dest) {
     const chain = new Set(trail(dest).map((n) => n.id))
     if (list.some((i) => i.type === 'folder' && chain.has(i.id))) return false
   }
-  return list.every((i) => i.role !== 'view' && i.parent !== dest && (dest || i.owner === me))
+  // Someone who can only edit an item may move it around inside the shared
+  // folder it lives in, not out of it.
+  const top = (id) => trail(id)[0]?.id
+  return list.every((i) => i.role !== 'view' && i.parent !== dest && (dest || i.owner === me) && (i.role === 'owner' || (!!i.parent && top(i.parent) === top(dest))))
 }
 
 // --- uploading -------------------------------------------------------------

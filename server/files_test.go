@@ -195,6 +195,23 @@ func TestFilesIsolationAndSharing(t *testing.T) {
 	if code := alice.do("PATCH", "/api/files/"+folder.ID, map[string]string{"parent": inner.ID}, nil); code != 409 {
 		t.Errorf("moving a folder into itself: %d, want 409", code)
 	}
+	// An editor may rearrange inside the shared folder, but not carry things
+	// off into a folder of their own (where they would come to own them).
+	var den Node
+	carol.do("POST", "/api/files/folders", map[string]string{"name": "Carol's own"}, &den)
+	if code := carol.do("PATCH", "/api/files/"+file.ID, map[string]string{"parent": den.ID}, nil); code != 403 {
+		t.Errorf("editor moving a file into their own folder: %d, want 403", code)
+	}
+	if code := carol.do("PATCH", "/api/docs/"+doc.ID, map[string]string{"folder": den.ID}, nil); code != 403 {
+		t.Errorf("editor moving a document into their own folder: %d, want 403", code)
+	}
+	if code := carol.do("PATCH", "/api/files/"+file.ID, map[string]string{"parent": inner.ID}, nil); code != 200 {
+		t.Errorf("editor moving a file within the shared folder: %d, want 200", code)
+	}
+	if got := alice.files()[file.ID]; got.Parent != inner.ID {
+		t.Errorf("file is in %q after the allowed move", got.Parent)
+	}
+	carol.do("DELETE", "/api/files/"+den.ID, nil, nil)
 
 	// Trash hides the whole folder from the colleague; deleting it for ever
 	// removes the content from disk and the documents filed in it.
