@@ -234,7 +234,7 @@ function Palette() {
         <div class="search-field">
           <SearchIcon size={18} />
           <input
-            ref={input} class="search-input" type="text" placeholder="Search people, documents, mail and chat" value={text}
+            ref={input} class="search-input" type="text" placeholder="Search Open Suite" value={text}
             role="combobox" aria-expanded="true" aria-controls="search-results" aria-activedescendant={list.active ? 'sr-' + list.active.n : undefined}
             autocomplete="off" autocapitalize="none" spellcheck={false} enterkeyhint="search"
             onInput={(e) => setText(e.target.value)} onKeyDown={onKey}
