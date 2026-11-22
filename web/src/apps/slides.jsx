@@ -16,7 +16,7 @@ import { user, docs, upsertDoc, toast, confirmed } from '../lib/store.js'
 import { navigate } from '../lib/router.js'
 import { refreshBoot } from '../lib/api.js'
 import { renameDoc, trashDoc } from '../lib/docs.js'
-import { cx, debounce, download, pickFile } from '../lib/util.js'
+import { cx, debounce, download, pickFile, idle } from '../lib/util.js'
 import { Avatar, Button, Empty, IconButton, Menu, Modal, keepFocus } from '../ui.jsx'
 import { ShareDialog } from './docs.jsx'
 import {
@@ -299,8 +299,16 @@ function Strip({ deck, onMenu }) {
   const themeId = deck.themeId()
   const peers = deck.peers()
   const [drop, setDrop] = useState(null)
+  // The thumbnails that fit on screen are drawn with the first frame; the
+  // rest of a long deck follows as soon as the browser is idle.
+  const [all, setAll] = useState(false)
   const ref = useRef()
+  const first = 8
 
+  useEffect(() => {
+    const t = idle(() => setAll(true))
+    return () => (window.cancelIdleCallback ? cancelIdleCallback(t) : clearTimeout(t))
+  }, [])
   useEffect(() => {
     ref.current?.querySelector('.sl-thumb.cur')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [deck.cur])
@@ -351,7 +359,9 @@ function Strip({ deck, onMenu }) {
             onPointerDown={(e) => down(e, id)} onContextMenu={(e) => onMenu(e, id)}>
             <span class="sl-num">{i + 1}</span>
             <div class="sl-thumb-frame">
-              <div class="sl-thumb-scale"><SlideView deck={deck} id={id} v={deck.versions.get(id) || 0} themeId={themeId} mode="thumb" /></div>
+              {all || i < first || id === deck.cur
+                ? <div class="sl-thumb-scale"><SlideView deck={deck} id={id} v={deck.versions.get(id) || 0} themeId={themeId} mode="thumb" /></div>
+                : <div class="sl-thumb-wait" style={{ background: deck.colors(id).bg }} />}
               {here.length > 0 && <span class="sl-thumb-peers">{here.slice(0, 4).map((p) => <i key={p.cid} style={{ background: p.user.color }} title={p.user.name} />)}</span>}
             </div>
           </div>
@@ -689,7 +699,8 @@ function onKey(e, deck, ui) {
     return
   }
   const any = deck.sel.size > 0
-  if (k === 'Escape') return deck.select([])
+  // Escape steps out one level: out of the text first, then out of the selection.
+  if (k === 'Escape') return deck.editing ? deck.stopEdit(true) : deck.select([])
   if (!any && (k === 'ArrowDown' || k === 'ArrowRight')) return done(), deck.step(1)
   if (!any && (k === 'ArrowUp' || k === 'ArrowLeft')) return done(), deck.step(-1)
   if (!can) return

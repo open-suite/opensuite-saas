@@ -251,26 +251,25 @@ export async function pptxToDeck(file, upload) {
     }
   }
   const holder = (sp) => kid(sp, 'p:nvSpPr', 'p:nvPr', 'p:ph') || kid(sp, 'p:nvPicPr', 'p:nvPr', 'p:ph')
-  const sameHolder = (ph, other) => {
-    if (!other) return false
-    const t = (x) => ({ ctrTitle: 'title', obj: 'body', subTitle: 'body' })[x.getAttribute('type')] || x.getAttribute('type') || 'body'
-    if (ph.hasAttribute('idx') && other.hasAttribute('idx')) return ph.getAttribute('idx') === other.getAttribute('idx')
-    return t(ph) === t(other)
-  }
-  const inherited = (ph, docs) => {
-    for (const d of docs) {
-      const tree = d && kid(d.documentElement, 'p:cSld', 'p:spTree')
-      const match = kids(tree, 'p:sp').find((sp) => sameHolder(ph, holder(sp)))
-      if (match) return match
-    }
-    return null
+  const part0 = (x) => ({ ctrTitle: 'title', obj: 'body', subTitle: 'body' })[x.getAttribute('type')] || x.getAttribute('type') || 'body'
+  // A placeholder on a slide takes whatever it does not say itself from the
+  // matching placeholder on its layout (same index, or same part) and then
+  // from the one on the master (same part).
+  const inherited = (ph, layoutDoc, masterDoc) => {
+    const boxes = (d) => kids(d && kid(d.documentElement, 'p:cSld', 'p:spTree'), 'p:sp').filter(holder)
+    const onLayout = boxes(layoutDoc).find((sp) => {
+      const other = holder(sp)
+      return ph.hasAttribute('idx') && other.hasAttribute('idx') ? ph.getAttribute('idx') === other.getAttribute('idx') : part0(ph) === part0(other)
+    })
+    const onMaster = boxes(masterDoc).find((sp) => part0(ph) === part0(holder(sp)))
+    return [onLayout, onMaster].filter(Boolean)
   }
 
   const paragraphsOf = (body, rel, opts) => {
     const paras = []
     for (const p of kids(body, 'a:p')) {
       const pPr = kid(p, 'a:pPr')
-      const algn = { l: 'left', ctr: 'center', r: 'right', just: 'left' }[pPr?.getAttribute('algn')] || null
+      const algn = { l: 'left', ctr: 'center', r: 'right', just: 'left' }[pPr?.getAttribute('algn') || opts.align] || null
       const content = []
       for (const r of p.children) {
         if (r.nodeName === 'a:br') content.push({ type: 'hardBreak' })
@@ -309,7 +308,11 @@ export async function pptxToDeck(file, upload) {
           if (last) last.content.push(sub)
           else list.content.push({ type: 'listItem', content: [{ type: 'paragraph' }, sub] })
         } else if (paras[i].list !== kind) break
-        else list.content.push({ type: 'listItem', content: [paras[i++].node] })
+        else {
+          const node = paras[i++].node
+          const size = node.content?.find((c) => c.type === 'text')?.marks?.find((m) => m.type === 'textStyle')?.attrs.fontSize
+          list.content.push({ type: 'listItem', ...(size ? { attrs: { fontSize: size } } : {}), content: [node] })
+        }
       }
       return list
     }
@@ -328,7 +331,8 @@ export async function pptxToDeck(file, upload) {
     const masterPath = layout && Object.values(layout.rels).find((r) => r.type === 'slideMaster')?.target
     const master = masterPath ? await part(masterPath) : null
     const parents = [layout?.doc, master?.doc]
-    const bodyBullets = !!kid(master?.doc?.documentElement, 'p:txStyles', 'p:bodyStyle', 'a:lvl1pPr', 'a:buChar')
+    const styles = kid(master?.doc?.documentElement, 'p:txStyles')
+    const bodyBullets = !!kid(styles, 'p:bodyStyle', 'a:lvl1pPr', 'a:buChar')
 
     let bg = null
     for (const d of [doc, ...parents]) {
@@ -362,8 +366,9 @@ export async function pptxToDeck(file, upload) {
           const ph = holder(n)
           const kind = ph ? ph.getAttribute('type') || 'body' : null
           if (['dt', 'ftr', 'sldNum', 'hdr'].includes(kind)) continue
-          const up = ph ? inherited(ph, parents) : null
-          const f = frameOf(kid(n, 'p:spPr', 'a:xfrm'), t) || frameOf(kid(up, 'p:spPr', 'a:xfrm'), root)
+          const ups = ph ? inherited(ph, layout?.doc, master?.doc) : []
+          const from = (...names) => ups.map((sp) => kid(sp, ...names)).find(Boolean) || null
+          const f = frameOf(kid(n, 'p:spPr', 'a:xfrm'), t) || frameOf(from('p:spPr', 'a:xfrm'), root)
           if (!f) continue
           const sp = kid(n, 'p:spPr')
           const geom = kid(sp, 'a:prstGeom')?.getAttribute('prst')
@@ -373,10 +378,12 @@ export async function pptxToDeck(file, upload) {
           const ln = kid(sp, 'a:ln')
           const stroke = ln && !kid(ln, 'a:noFill') ? colorOf(kid(ln, 'a:solidFill'), ctx) : null
           const body = kid(n, 'p:txBody')
-          const anchor = kid(body, 'a:bodyPr')?.getAttribute('anchor') || kid(up, 'p:txBody', 'a:bodyPr')?.getAttribute('anchor')
+          const anchor = kid(body, 'a:bodyPr')?.getAttribute('anchor') || ups.map((sp) => kid(sp, 'p:txBody', 'a:bodyPr')?.getAttribute('anchor')).find(Boolean)
           const role = { title: 'title', ctrTitle: 'title', subTitle: 'subtitle', body: 'body', obj: 'body' }[kind]
-          const noBullets = !!kid(up, 'p:txBody', 'a:lstStyle', 'a:lvl1pPr', 'a:buNone')
-          const text = body ? paragraphsOf(body, rel, { bullets: role === 'body' && bodyBullets && !noBullets }) : []
+          const level1 = ups.map((sp) => kid(sp, 'p:txBody', 'a:lstStyle', 'a:lvl1pPr')).filter(Boolean)
+          const noBullets = level1.some((l) => kid(l, 'a:buNone'))
+          const align = ph ? level1.map((l) => l.getAttribute('algn')).find(Boolean) || kid(styles, role === 'title' ? 'p:titleStyle' : 'p:bodyStyle', 'a:lvl1pPr')?.getAttribute('algn') : null
+          const text = body ? paragraphsOf(body, rel, { bullets: role === 'body' && bodyBullets && !noBullets, align }) : []
           // A rectangle with neither fill nor outline is a plain text box.
           const drawn = !!(fill || stroke)
           const shape = box || ph ? 'none' : geom === 'ellipse' ? 'ellipse' : geom === 'roundRect' ? 'round' : drawn ? 'rect' : 'none'

@@ -78,12 +78,12 @@ function report(label, samples, budget = BUDGET) {
     for (let i = 0; i < 13; i++) {
       await click('a[href="/docs"]', `document.querySelector('.page-head')`)
       await page.waitForTimeout(300)
-      opens.push(await click(`a.list-row[href="/p/${made}"]`, `document.querySelector('.sl-canvas .sl-slide')?.textContent.includes('Speed check') && document.querySelectorAll('.sl-thumb .sl-slide').length === 12`))
+      opens.push(await click(`a.list-row[href="/p/${made}"]`, `document.querySelector('.sl-canvas .sl-slide')?.textContent.includes('Speed check') && document.querySelectorAll('.sl-thumb .sl-slide').length >= 8`))
       parts.push(await page.evaluate(() => ({ ...window.__slidesTiming })))
     }
     const part = (k) => med(parts.map((p) => p[k] || 0)).toFixed(0)
     console.log(`info  inside a deck open: load state ${part('state')} ms, text to HTML ${part('text')} ms, slide in the page after ${part('shown')} ms; first open in this session ${opens[0].toFixed(0)} ms`)
-    report('open a presentation, first slide and all thumbnails on screen', opens.slice(1))
+    report('open a presentation, first slide and the thumbnails in view on screen', opens.slice(1))
 
     const steps = []
     for (let i = 0; i < 22; i++) {

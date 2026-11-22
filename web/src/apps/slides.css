@@ -16,6 +16,10 @@
 .sl-text li > p { margin: 0; }
 .sl-text li + li, .sl-text li > ul, .sl-text li > ol { margin-top: 0.22em; }
 .sl-text li::marker { color: var(--s-accent); }
+/* Centred or right-aligned list lines carry their bullet with them. */
+.sl-text li:has(> p[style*="text-align: center"]), .sl-box-text[style*="text-align: center"] li:not(:has(> p[style*="text-align"])) { list-style-position: inside; text-align: center; }
+.sl-text li:has(> p[style*="text-align: right"]) { list-style-position: inside; text-align: right; }
+.sl-text li > p[style*="text-align: center"], .sl-text li > p[style*="text-align: right"], .sl-box-text[style*="text-align: center"] li > p:not([style*="text-align"]) { display: inline; }
 .sl-text a { color: var(--s-accent); text-decoration: underline; }
 .sl-text p:empty::after { content: "\200b"; }
 .sl-hint { color: var(--s-muted); opacity: 0.75; }
@@ -65,6 +69,7 @@
 .sl-num { width: 22px; flex: none; padding-top: 2px; text-align: right; font-size: 11.5px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 .sl-thumb-frame { --k: 0.1171875; position: relative; width: 150px; height: 84.375px; flex: none; overflow: hidden; border-radius: 5px; background: #fff; box-shadow: 0 0 0 1px var(--line-strong); contain: strict; }
 .sl-thumb-scale { width: 1280px; height: 720px; transform: scale(var(--k)); transform-origin: 0 0; pointer-events: none; position: relative; }
+.sl-thumb-wait { position: absolute; inset: 0; }
 .sl-thumb:hover .sl-thumb-frame { box-shadow: 0 0 0 1px var(--faint); }
 .sl-thumb.on .sl-thumb-frame { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 50%, var(--bg)); }
 .sl-thumb.cur .sl-thumb-frame { box-shadow: 0 0 0 2px var(--accent); }

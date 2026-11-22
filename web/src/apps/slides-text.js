@@ -7,18 +7,54 @@ import StarterKit from '@tiptap/starter-kit'
 import TextAlign from '@tiptap/extension-text-align'
 import { TextStyle, Color, FontSize, FontFamily } from '@tiptap/extension-text-style'
 import { DOMSerializer } from '@tiptap/pm/model'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
 import {
   ySyncPlugin, ySyncPluginKey, yCursorPlugin, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProsemirrorJSON, prosemirrorJSONToYXmlFragment,
 } from '@tiptap/y-tiptap'
 
 export { ySyncPluginKey }
 
+// A list item carries the size of the text it starts with, so that its bullet
+// or number is drawn at that size. The editor keeps the two in step whatever
+// changed the text: the toolbar, a shortcut, a paste, a colleague.
+const ListSize = Extension.create({
+  name: 'listSize',
+  addGlobalAttributes: () => [{
+    types: ['listItem'],
+    attributes: {
+      fontSize: {
+        default: null,
+        parseHTML: (el) => el.style.fontSize || null,
+        renderHTML: (attrs) => (attrs.fontSize ? { style: `font-size: ${attrs.fontSize}` } : {}),
+      },
+    },
+  }],
+  addProseMirrorPlugins: () => [new Plugin({
+    key: new PluginKey('deckListSize'),
+    appendTransaction(trs, before, state) {
+      if (!trs.some((t) => t.docChanged)) return null
+      let tr = null
+      state.doc.descendants((node, pos) => {
+        if (node.type.name !== 'listItem') return
+        let size = null, seen = false
+        node.firstChild?.descendants((n) => {
+          if (seen || !n.isText) return
+          seen = true
+          size = n.marks.find((m) => m.type.name === 'textStyle')?.attrs.fontSize || null
+        })
+        if ((node.attrs.fontSize || null) !== size) (tr ||= state.tr).setNodeMarkup(pos, null, { ...node.attrs, fontSize: size })
+      })
+      return tr
+    },
+  })],
+})
+
 const extensions = () => [
   StarterKit.configure({
     undoRedo: false, heading: false, blockquote: false, codeBlock: false, code: false, horizontalRule: false,
     dropcursor: false, gapcursor: false, trailingNode: false, link: { openOnClick: false, autolink: true },
   }),
-  TextStyle, Color, FontSize, FontFamily,
+  TextStyle, Color, FontSize, FontFamily, ListSize,
   TextAlign.configure({ types: ['paragraph'] }),
 ]
 

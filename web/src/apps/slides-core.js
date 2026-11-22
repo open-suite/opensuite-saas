@@ -464,7 +464,9 @@ export class Deck {
   }
 
   select(ids) {
-    this.sel = new Set(ids)
+    const next = new Set(ids)
+    if (this.editing && !next.has(this.editing)) this.stopEdit()
+    this.sel = next
     this.zone = 'stage'
     this.publish()
     this.changed()
@@ -477,12 +479,30 @@ export class Deck {
   // --- changing the deck ----------------------------------------------------
 
   // mutate makes one change to the deck. Each call is its own step for undo,
-  // unless `merge` says it continues the step before (typing, nudging).
+  // unless `merge` says it continues the step before (typing, nudging), or
+  // is 'open': a new step that what follows at once may still join.
   mutate(fn, merge) {
     if (!this.state.canEdit) return
-    if (!merge) this.undoer.stopCapturing()
+    if (merge !== true) this.undoer.stopCapturing()
     this.ydoc.transact(fn, LOCAL)
     if (!merge) this.undoer.stopCapturing()
+  }
+
+  // refit grows text boxes whose text no longer fits them, once the page has
+  // drawn the change that made it so (a paste, a larger size, a list).
+  refit(ids) {
+    requestAnimationFrame(() => setTimeout(() => {
+      if (this.closed || !this.host) return
+      const changes = {}
+      for (const id of ids) {
+        const e = this.el(id)
+        const dom = this.host.parentElement?.querySelector(`.sl-slide [data-el="${id}"]`)
+        if (!e || !dom || e.type !== 'box' || isShape(e) || id === this.editing) continue
+        const d = Math.ceil(dom.offsetHeight) - e.h
+        if (d > 0.5) changes[id] = { h: e.h + d, y: e.valign === 'bottom' ? e.y - d : e.valign === 'middle' ? e.y - d / 2 : e.y }
+      }
+      if (Object.keys(changes).length) this.patch(changes, true)
+    }, 0))
   }
 
   undo() {
@@ -612,18 +632,19 @@ export class Deck {
     return [x, y]
   }
 
-  add(data) {
+  add(data, merge) {
     const id = newId(8)
     this.stopEdit()
-    this.mutate(() => writeEl(this.slide().get('els'), { ...data, id, z: this.topZ() + 1 }))
+    this.mutate(() => writeEl(this.slide().get('els'), { ...data, id, z: this.topZ() + 1 }), merge)
     if (this.elMap(id)) this.select([id])
     return id
   }
 
   addText(text) {
     const [x, y] = this.free(W / 2 - 260, H / 2 - 40)
-    const id = this.add({ type: 'box', shape: 'none', x, y, w: 520, h: 50, rot: 0, valign: 'top', text: text ? paragraphs(...text.split(/\r?\n/)) : undefined })
-    if (!text) this.startEdit(id)
+    const id = this.add({ type: 'box', shape: 'none', x, y, w: 520, h: 50, rot: 0, valign: 'top', text: text ? paragraphs(...text.split(/\r?\n/)) : undefined }, text ? 'open' : undefined)
+    if (text) this.refit([id])
+    else this.startEdit(id)
     return id
   }
 
@@ -801,8 +822,9 @@ export class Deck {
         writeEl(els, { ...e, ...shifted(e, shift, shift), id, z: ++z })
         made.push(id)
       }
-    })
+    }, 'open')
     if (made.length) this.select(made)
+    this.refit(made)
   }
 
   // --- typing in a box ------------------------------------------------------
@@ -899,7 +921,7 @@ export class Deck {
     else {
       this.undoer.stopCapturing()
       for (const e of this.boxes()) formatAll(e.text, run)
-      this.undoer.stopCapturing()
+      this.refit(this.boxes().map((e) => e.id))
     }
     this.changed()
   }
