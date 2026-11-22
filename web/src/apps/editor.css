@@ -1,5 +1,6 @@
 .doc-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .doc-scroll { flex: 1; overflow: auto; padding: 28px 20px 80px; background: var(--canvas); }
+.doc-main { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; }
 .paper {
   width: 816px; max-width: 100%; min-height: 1056px; margin: 0 auto; padding: 84px 92px;
   background: var(--bg); border: 1px solid var(--line); border-radius: 4px; box-shadow: var(--shadow-1);
@@ -46,6 +47,6 @@
   .doc-scroll { overflow: visible; padding: 0; background: #fff; }
   .paper { border: 0; box-shadow: none; padding: 0; width: auto; min-height: 0; color: #000; background: #fff; }
   .doc-foot, .caret { display: none; }
-  .main, .shell, .doc-view { display: block; height: auto; }
+  .main, .shell, .doc-view, .doc-body, .doc-main { display: block; height: auto; }
   @page { margin: 22mm 20mm; }
 }

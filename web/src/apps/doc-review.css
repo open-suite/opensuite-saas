@@ -1,0 +1,60 @@
+:root { --cmt: #fff3c4; --cmt-on: #ffdf80; --cmt-line: #e3b341; }
+@media (prefers-color-scheme: dark) {
+  :root { --cmt: rgba(227, 179, 65, 0.22); --cmt-on: rgba(227, 179, 65, 0.48); --cmt-line: #b98a1f; }
+}
+
+.doc-body { flex: 1; min-height: 0; display: flex; position: relative; }
+.doc-body .doc-scroll { flex: 1; min-width: 0; }
+.review { width: 332px; flex: none; display: flex; flex-direction: column; background: var(--canvas); border-left: 1px solid var(--line); }
+.rv-list { flex: 1; overflow: auto; padding: 2px 12px 72px; display: flex; flex-direction: column; gap: 10px; }
+.rv-card {
+  display: flex; flex-direction: column; gap: 10px; padding: 11px 12px; cursor: pointer;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg);
+}
+.rv-card:hover { border-color: var(--line-strong); }
+.rv-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); cursor: default; }
+.rv-card.done { background: transparent; }
+.rv-quote { font-size: 12.5px; color: var(--muted); border-left: 3px solid var(--cmt-line); padding-left: 8px; }
+.rv-quote.gone { border-left-color: var(--line-strong); font-style: italic; }
+.rv-entry { display: flex; gap: 9px; align-items: flex-start; }
+.rv-entry + .rv-entry { padding-top: 10px; border-top: 1px solid var(--line); }
+.rv-head { display: flex; align-items: center; gap: 6px; min-height: 26px; }
+.rv-name { font-weight: 600; font-size: 13px; }
+.rv-when { font-size: 12px; color: var(--faint); white-space: nowrap; }
+.rv-text { font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rv-what q { color: var(--ink-2); }
+.rv-sug { border-left: 3px solid var(--who, var(--line-strong)); }
+.rv-note { font-size: 12px; color: var(--faint); }
+.mention { color: var(--accent); font-weight: 550; }
+.rv-compose { position: relative; display: flex; flex-direction: column; gap: 8px; cursor: auto; }
+.rv-compose .textarea { resize: none; min-height: 36px; padding: 7px 10px; font-size: 13.5px; line-height: 1.45; }
+.rv-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.rv-actions .btn { height: 30px; padding: 0 11px; }
+.rv-people { left: 0; right: 0; top: 40px; min-width: 0; }
+.rv-people .menu-item.hover { background: var(--sunken); }
+.rv-more { align-self: center; border: 0; background: transparent; padding: 6px 10px; border-radius: 7px; color: var(--muted); font-weight: 600; font-size: 12.5px; }
+.rv-more:hover { background: var(--sunken); color: var(--ink); }
+.rv-count { position: relative; }
+.rv-count .count { position: absolute; top: -3px; right: -4px; min-width: 16px; height: 16px; font-size: 10px; background: var(--accent); color: var(--accent-ink); pointer-events: none; }
+
+/* Suggestions in the text, in the colour of whoever made them. */
+.paper ins.sug-ins { text-decoration: none; color: var(--who); border-bottom: 1.5px solid var(--who); background: color-mix(in srgb, var(--who) 9%, transparent); }
+.paper del.sug-del { color: var(--who); text-decoration: line-through; text-decoration-thickness: 1.5px; background: color-mix(in srgb, var(--who) 6%, transparent); }
+.paper .sug-fmt { border-bottom: 1.5px dotted var(--who); }
+.paper .cmt { border-radius: 2px; }
+/* Viewing: the document as it would read with every suggestion accepted. */
+.clean .paper ins.sug-ins { color: inherit; border: 0; background: none; }
+.clean .paper del.sug-del { display: none; }
+.clean .paper .sug-fmt { border: 0; }
+.clean .paper .cmt { background: none !important; border: 0 !important; }
+
+.mode-select { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.mode-select .select { font-weight: 600; }
+
+@media (max-width: 1100px) {
+  .review { position: absolute; top: 0; right: 0; bottom: 0; z-index: 20; width: min(360px, 100%); box-shadow: var(--shadow-2); }
+}
+@media print {
+  .review { display: none !important; }
+  .paper .cmt { background: none !important; border: 0 !important; }
+}
