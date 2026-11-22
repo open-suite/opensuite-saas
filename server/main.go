@@ -190,6 +190,7 @@ func (s *Server) routes() http.Handler {
 	m.HandleFunc("DELETE /api/docs/{id}", s.auth(s.handleDocDelete))
 	m.HandleFunc("GET /api/docs/{id}/sync", s.auth(s.handleDocSync))
 	m.HandleFunc("GET /api/docs/{id}/state", s.auth(s.handleDocState))
+	m.HandleFunc("GET /api/search", s.auth(s.handleSearch))
 	m.HandleFunc("POST /api/convert", s.auth(s.handleConvert))
 	m.HandleFunc("POST /api/blobs", s.auth(s.handleBlobPut))
 	m.HandleFunc("GET /api/blobs/{id}", s.auth(s.handleBlobGet))

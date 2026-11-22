@@ -375,6 +375,7 @@ func (s *Server) handleDocSync(w http.ResponseWriter, r *http.Request, u *User) 
 	}
 	backlog = append(backlog, varint([]byte{msgSynced}, uint64(rm.seq)))
 	rm.peers[p] = struct{}{}
+	textFresh := s.textFresh(id, rm.seq)
 	rm.mu.Unlock()
 
 	defer func() {
@@ -400,6 +401,7 @@ func (s *Server) handleDocSync(w http.ResponseWriter, r *http.Request, u *User) 
 		} else {
 			hello = append(hello, 0)
 		}
+		hello = append(hello, textFresh) // 0: the search index wants this document's text
 		if !write(hello) {
 			return
 		}
@@ -446,6 +448,10 @@ func (s *Server) handleDocSync(w http.ResponseWriter, r *http.Request, u *User) 
 				if n > 0 {
 					s.applySnapshot(rm, int64(seq), msg[1+n:])
 				}
+			}
+		case msgText:
+			if p.edit {
+				s.indexText(rm, msg[1:])
 			}
 		}
 	}

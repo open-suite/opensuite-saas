@@ -254,6 +254,10 @@ function openDocument(id, element, me, onChange) {
       onChange()
     },
   }, 0, whenCreated(id))
+  // Search: the socket sends these words to the server's index (lib/sync.js).
+  // Read from the document node, which outlives the editor: the last send
+  // happens while this view is closing.
+  sock.text = () => editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n', ' ')
 
   // A file chosen in "Import" becomes this document's first content.
   local.whenSynced.then(() => {

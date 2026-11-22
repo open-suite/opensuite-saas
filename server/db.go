@@ -119,6 +119,9 @@ func openDB(dir string) (w, r *sql.DB, err error) {
 			return nil, nil, fmt.Errorf("schema: %w", err)
 		}
 	}
+	if _, err = w.Exec(searchSchema); err != nil {
+		return nil, nil, fmt.Errorf("search schema: %w", err)
+	}
 	if r, err = sql.Open("sqlite", dsn+"&mode=ro"); err != nil {
 		return nil, nil, err
 	}

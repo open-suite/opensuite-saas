@@ -321,7 +321,8 @@ export function Mail() {
       try {
         saved = JSON.parse(localStorage.getItem(DRAFT))
       } catch {}
-      setCompose(saved || { to: '', cc: '', bcc: '', subject: '', html: '' })
+      // "to" comes from search: writing to a person found there.
+      setCompose(params.get('to') ? { to: params.get('to'), cc: '', bcc: '', subject: '', html: '' } : saved || { to: '', cc: '', bcc: '', subject: '', html: '' })
       navigate('/mail', { replace: true })
     } else if (params.get('open')) {
       setOpenId(params.get('open'))
