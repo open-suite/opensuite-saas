@@ -10,10 +10,7 @@ const fs = require('fs')
 const path = require('path')
 const { connect, login, collect, BASE } = require('./browser.cjs')
 
-const STATE = path.join(__dirname, '.state-files.json')
-const all = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : {}
-const state = (all[BASE] ??= {})
-const save = () => fs.writeFileSync(STATE, JSON.stringify(all, null, 1))
+const { state, save } = require('./browser.cjs').remember()
 const ADMIN = { user: process.env.OS_E2E_USER, pass: process.env.OS_E2E_PASS }
 const COLLEAGUE_PASS = process.env.OS_E2E_COLLEAGUE_PASS || 'compilers-are-great-07'
 const SHOTS = process.env.OS_E2E_SHOTS

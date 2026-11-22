@@ -14,9 +14,7 @@ const fs = require('fs')
 const path = require('path')
 const { connect, login, BASE } = require('./browser.cjs')
 
-const STATE = path.join(__dirname, '.state.json')
-const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : {}
-const save = () => fs.writeFileSync(STATE, JSON.stringify(state, null, 1))
+const { state, save } = require('./browser.cjs').remember()
 const ADMIN = { user: process.env.OS_E2E_USER, pass: process.env.OS_E2E_PASS }
 const COLLEAGUE_PASS = process.env.OS_E2E_COLLEAGUE_PASS || 'compilers-are-great-07'
 if (!ADMIN.user || !ADMIN.pass) throw new Error('set OS_E2E_USER and OS_E2E_PASS to an administrator account')
@@ -117,8 +115,9 @@ const call = (page, { method, url, body }) => page.evaluate(async ({ method, url
     await A.click('.paper')
     await A.keyboard.type(`The launch is in spring. The secret word is quokka${tag}, and Crème brûlée is served.`)
     await A.waitForTimeout(700) // the title is saved half a second after the last key
-    await A.click('.rail a[href="/docs"]') // leaving an editor hands its text to the index
-    await A.click('text=New spreadsheet')
+    await A.click('.rail a[href="/files"]') // leaving an editor hands its text to the index
+    await A.click('.page-head button:has-text("New")')
+    await A.click('.menu >> text=New spreadsheet')
     await A.waitForSelector('.toolbar .select')
     created.push('/api/docs/' + A.url().split('/').pop())
     await A.fill('.doc-title', `Hangar budget ${tag}`)

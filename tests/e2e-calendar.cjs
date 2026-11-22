@@ -10,9 +10,7 @@ const fs = require('fs')
 const path = require('path')
 const { connect, login, BASE } = require('./browser.cjs')
 
-const STATE = path.join(__dirname, '.state.json')
-const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : {}
-const save = () => fs.writeFileSync(STATE, JSON.stringify(state, null, 1))
+const { state, save } = require('./browser.cjs').remember()
 const ADMIN = { user: process.env.OS_E2E_USER, pass: process.env.OS_E2E_PASS }
 const COLLEAGUE_PASS = process.env.OS_E2E_COLLEAGUE_PASS || 'compilers-are-great-07'
 if (!ADMIN.user || !ADMIN.pass) throw new Error('set OS_E2E_USER and OS_E2E_PASS to an administrator account')

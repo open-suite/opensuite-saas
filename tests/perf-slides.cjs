@@ -69,14 +69,14 @@ function report(label, samples, budget = BUDGET) {
       return performance.now() - t
     }, { selector, ready })
 
-    await page.goto(BASE + '/docs')
+    await page.goto(BASE + '/files')
     await page.waitForSelector(`a.list-row[href="/p/${made}"]`)
     await page.waitForTimeout(7000) // background preload of the editors and recent decks
 
     const opens = []
     const parts = []
     for (let i = 0; i < 13; i++) {
-      await click('a[href="/docs"]', `document.querySelector('.page-head')`)
+      await click('a[href="/files"]', `document.querySelector('.page-head')`)
       await page.waitForTimeout(300)
       opens.push(await click(`a.list-row[href="/p/${made}"]`, `document.querySelector('.sl-canvas .sl-slide')?.textContent.includes('Speed check') && document.querySelectorAll('.sl-thumb .sl-slide').length >= 8`))
       parts.push(await page.evaluate(() => ({ ...window.__slidesTiming })))

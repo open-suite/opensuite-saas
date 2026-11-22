@@ -9,6 +9,17 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'playwright-core')
 
 exports.BASE = (process.env.OS_BASE || 'https://office.demo.opensuite.online').replace(/\/$/, '')
 
+// What the checks remember between runs (the colleague the first one adds),
+// kept per deployment in tests/.state.json so a local run and a server run
+// do not overwrite each other.
+exports.remember = function remember() {
+  const fs = require('fs')
+  const file = require('path').join(__dirname, '.state.json')
+  const all = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}
+  const state = (all[exports.BASE] ??= {})
+  return { state, save: () => fs.writeFileSync(file, JSON.stringify(all, null, 1)) }
+}
+
 exports.connect = async function connect() {
   const browser = await chromium.connectOverCDP(process.env.OS_CDP || 'http://127.0.0.1:9222')
   const cdp = await browser.newBrowserCDPSession()

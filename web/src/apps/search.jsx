@@ -282,11 +282,14 @@ export function SearchPage() {
   const [text, setTextState] = useState(urlText)
   const current = useRef(urlText)
   const input = useRef()
-  const session = useMemo(() => new Session(only ? { only, perGroup: 50, remoteLimit: 50 } : { perGroup: 8, remoteLimit: 12 }), [only])
-  useEffect(() => {
-    session.set(current.current, { now: true })
-    return () => session.close()
-  }, [session])
+  // The session answers in the same render that creates it, so switching the
+  // kind filter never shows an empty frame first.
+  const session = useMemo(() => {
+    const s = new Session(only ? { only, perGroup: 50, remoteLimit: 50 } : { perGroup: 8, remoteLimit: 12 })
+    s.set(current.current, { now: true })
+    return s
+  }, [only])
+  useEffect(() => () => session.close(), [session])
   // The address changed from outside (the palette's "see all", back, forward).
   useEffect(() => {
     if (urlText === current.current.trim()) return

@@ -12,8 +12,7 @@ const fs = require('fs')
 const path = require('path')
 const { connect, login, collect, BASE } = require('./browser.cjs')
 
-const STATE = path.join(__dirname, '.state.json')
-const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : {}
+const { state } = require('./browser.cjs').remember()
 const steps = process.argv.slice(2)
 const want = (s) => !steps.length || steps.includes(s)
 const ADMIN = { user: process.env.OS_E2E_USER, pass: process.env.OS_E2E_PASS }

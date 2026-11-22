@@ -17,7 +17,7 @@ import { TextStyle, Color } from '@tiptap/extension-text-style'
 import { TaskList, TaskItem } from '@tiptap/extension-list'
 import { TableKit } from '@tiptap/extension-table'
 import { Placeholder, CharacterCount } from '@tiptap/extensions'
-import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
+import { yXmlFragmentToProseMirrorRootNode, yUndoPluginKey } from '@tiptap/y-tiptap'
 import {
   ArrowLeft, Undo2, Redo2, Bold, Italic, Underline, Strikethrough, Highlighter, Baseline, Link2, List, ListOrdered, ListChecks,
   AlignLeft, AlignCenter, AlignRight, Quote, Code2, Table, ImagePlus, Minus, RemoveFormatting, Users, MoreHorizontal,
@@ -567,8 +567,13 @@ export default function EditorView({ id }) {
   const restore = async (version, state) => {
     await post(`/api/docs/${id}/versions`, {})
     const old = pastDoc(state)
+    // Its own step in the undo history: joined to typing from a moment before,
+    // one Undo would take both and leave the page empty.
+    const history = yUndoPluginKey.getState(editor.state)?.undoManager
+    history?.stopCapturing()
     adoptThreads(s.ydoc, old.ydoc)
     editor.chain().setMeta(suggestKey, { skip: true }).setContent(old.json).run()
+    history?.stopCapturing()
     old.ydoc.destroy()
     setPast(null)
   }

@@ -14,9 +14,7 @@ const path = require('path')
 const { connect, login, collect, BASE } = require('./browser.cjs')
 const JSZip = require('../web/node_modules/jszip')
 
-const STATE = path.join(__dirname, '.state.json')
-const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : {}
-const save = () => fs.writeFileSync(STATE, JSON.stringify(state, null, 1))
+const { state, save } = require('./browser.cjs').remember()
 const ADMIN = { user: process.env.OS_E2E_USER, pass: process.env.OS_E2E_PASS }
 const COLLEAGUE_PASS = process.env.OS_E2E_COLLEAGUE_PASS || 'compilers-are-great-07'
 const SHOTS = process.env.OS_SHOTS
@@ -207,8 +205,9 @@ async function sibling(page, url, opened) {
     await paste(A)
     if ((await els(A)).filter((e) => e.shape === 'round').length !== 2) throw new Error('paste did not add a copy')
     await A.keyboard.press('Delete')
-    await A.goto(BASE + '/docs')
-    await A.click('text=New presentation')
+    await A.goto(BASE + '/files')
+    await A.click('.page-head button:has-text("New")')
+    await A.click('.menu >> text=New presentation')
     await A.waitForSelector('.sl-canvas .sl-role-title')
     created.push('/api/docs/' + A.url().split('/').pop())
     await paste(A)
