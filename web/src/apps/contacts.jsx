@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import { ArrowLeft, Building2, Download, Mail as MailIcon, MapPin, MoreHorizontal, Pencil, Phone, Plus, Search, StickyNote, Trash2, Upload, Users, X } from 'lucide-preact'
 import './contacts.css'
 import { people, org, user, toast } from '../lib/store.js'
-import { navigate } from '../lib/router.js'
+import { query, navigate } from '../lib/router.js'
 import { cx, download, pickFile } from '../lib/util.js'
 import { Avatar, Button, Empty, IconButton, Menu } from '../ui.jsx'
 import { cards, contactsReady, nameOf, emailsOf, phonesOf, companyOf, titleOf, toForm, fromForm, saveContact, deleteContact, importContacts, toVCard } from '../lib/contacts.js'
@@ -128,6 +128,15 @@ export default function Contacts() {
   const mine = useMemo(() => (s ? list.filter((c) => (nameOf(c) + ' ' + emailsOf(c).join(' ') + ' ' + companyOf(c) + ' ' + phonesOf(c).join(' ')).toLowerCase().includes(s)) : list), [list, s])
   const theirs = useMemo(() => folks.filter((p) => p.status !== 'suspended' && (!s || (p.name + ' ' + p.email).toLowerCase().includes(s))), [folks, s])
   const current = sel && (sel.kind === 'card' ? list.find((c) => c.id === sel.id) : folks.find((p) => p.id === sel.id))
+
+  // A link from search names the contact to show.
+  useEffect(() => {
+    const open = new URLSearchParams(query.value).get('open')
+    if (!open) return
+    setSel({ kind: 'card', id: open })
+    setEditing(null)
+    navigate('/contacts', { replace: true })
+  }, [query.value])
 
   useEffect(() => {
     const onKey = (e) => {

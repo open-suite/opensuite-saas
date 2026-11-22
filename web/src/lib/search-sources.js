@@ -2,7 +2,11 @@
 // chat and meetings. Each one is a provider as described in lib/search.js;
 // a new part of the suite adds its own with addProvider in the same way.
 import { Users, FileText, Table2, Mail as MailIcon, MessageSquare, Video, PenSquare, Folder, File as FileIcon } from 'lucide-preact'
+import { CalendarDays, Contact } from 'lucide-preact'
 import { items, folders, itemHref } from './files.js'
+import { occurrences, placeOf, notesOf, guestsOf } from './calendar.js'
+import { cards, nameOf as contactName, emailsOf, phonesOf, companyOf } from './contacts.js'
+import { DAY, startOfDay, dateKey, span } from './time.js'
 import { boot, docs, people, peopleById, meetings, user, upsertDoc } from './store.js'
 import { docPath } from './docs.js'
 import { navigate } from './router.js'
@@ -92,6 +96,54 @@ addProvider({
       return {
         id: i.id, title: i.name, sub: [i.type === 'folder' ? 'Folder' : where && 'In ' + where, owner].filter(Boolean).join(' · '),
         when: i.updated * 1000, href: itemHref(i), icon: i.type === 'folder' ? Folder : FileIcon, tone: 'doc', score,
+      }
+    })
+  },
+})
+
+// --- calendar ---------------------------------------------------------------------
+//
+// Every event is on the device. A repeating event is shown once, at its next
+// occurrence (or its last one, if it has ended).
+
+const SPAN_BACK = 180 * DAY
+const SPAN_AHEAD = 400 * DAY
+
+addProvider({
+  id: 'events',
+  label: 'Calendar',
+  order: 27,
+  icon: CalendarDays,
+  local(q) {
+    const now = Date.now()
+    const day = startOfDay(now)
+    const best = new Map()
+    for (const o of occurrences(day - SPAN_BACK, day + SPAN_AHEAD)) {
+      const had = best.get(o.id)
+      const ahead = o.end >= now
+      if (!had || (ahead && had.end < now) || (!ahead && had.end < now && o.start > had.start)) best.set(o.id, o)
+    }
+    return rank([...best.values()], q, (o) => [o.title, placeOf(o.inst), notesOf(o.inst), guestsOf(o.inst).map((g) => g.name + ' ' + g.email).join(' ')], (o) => -Math.abs(o.start - now)).map(({ item: o, score }) => ({
+      id: o.id, title: o.title, sub: [span(o.start, o.end, o.allDay), placeOf(o.inst)].filter(Boolean).join(' · '),
+      when: o.start, href: '/calendar?day=' + dateKey(o.start), icon: CalendarDays, tone: 'meet', score,
+    }))
+  },
+})
+
+// --- contacts ---------------------------------------------------------------------
+
+addProvider({
+  id: 'contacts',
+  label: 'Contacts',
+  order: 15,
+  icon: Contact,
+  local(q) {
+    return rank(cards.value, q, (c) => [contactName(c), emailsOf(c).join(' '), companyOf(c), phonesOf(c).join(' ')]).map(({ item: c, score }) => {
+      const email = emailsOf(c)[0]
+      return {
+        id: c.id, title: contactName(c), snippet: [email, companyOf(c)].filter(Boolean).join(' · '), avatar: { name: contactName(c), id: c.id }, score,
+        href: '/contacts?open=' + encodeURIComponent(c.id),
+        actions: email ? [{ icon: PenSquare, label: 'Write to ' + contactName(c), href: '/mail?compose=1&to=' + encodeURIComponent(email) }] : [],
       }
     })
   },
