@@ -100,6 +100,7 @@ export function ShareDialog({ doc, onClose, save = (change) => shareDoc(doc, cha
                   else setShares(shared.map((x) => (x.user === s.user ? { ...x, role: e.target.value } : x)))
                 }}>
                   <option value="edit">Can edit</option>
+                  {doc.kind === 'doc' && <option value="comment">Can comment</option>}
                   <option value="view">Can view</option>
                   <option value="remove">Remove</option>
                 </select>

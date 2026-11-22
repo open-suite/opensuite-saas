@@ -83,12 +83,13 @@ export function startFiles() {
 
 // --- one list for everything in the drive ---------------------------------
 //
-// An item is a folder, a file or a document, in one shape:
+// An item is a folder, a file or a document, in one shape (someone who may
+// only comment on a document is a viewer as far as the drive is concerned):
 // { key, type: 'folder' | 'file' | 'doc', id, name, parent, owner, role,
 //   access, shares, updated, size, mime, trashed, kind, ref }
 
 const fromNode = (n) => ({ key: 'n:' + n.id, type: n.kind, id: n.id, name: n.name, parent: n.parent || '', owner: n.owner, role: n.role, access: n.access, shares: n.shares || [], updated: n.updated, size: n.size, mime: n.mime || '', trashed: n.trashed || 0, link: n.link || '', uploading: n.uploading, ref: n })
-const fromDoc = (d) => ({ key: 'd:' + d.id, type: 'doc', kind: d.kind, id: d.id, name: d.title || 'Untitled', parent: d.folder || '', owner: d.owner, role: d.role, access: d.access, shares: d.shares || [], updated: d.updated, size: 0, mime: '', trashed: d.trashed || 0, ref: d })
+const fromDoc = (d) => ({ key: 'd:' + d.id, type: 'doc', kind: d.kind, id: d.id, name: d.title || 'Untitled', parent: d.folder || '', owner: d.owner, role: d.role === 'comment' ? 'view' : d.role, access: d.access, shares: d.shares || [], updated: d.updated, size: 0, mime: '', trashed: d.trashed || 0, ref: d })
 
 const nodeById = computed(() => Object.fromEntries(nodes.value.map((n) => [n.id, n])))
 

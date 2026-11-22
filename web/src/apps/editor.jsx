@@ -1,7 +1,7 @@
 // The document editor. The document is a CRDT held on the device: it opens
 // from local storage, edits apply locally at once, and the server is a relay
 // and backup. Losing the connection changes nothing except the status label.
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness'
@@ -17,20 +17,24 @@ import { TextStyle, Color } from '@tiptap/extension-text-style'
 import { TaskList, TaskItem } from '@tiptap/extension-list'
 import { TableKit } from '@tiptap/extension-table'
 import { Placeholder, CharacterCount } from '@tiptap/extensions'
+import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
 import {
   ArrowLeft, Undo2, Redo2, Bold, Italic, Underline, Strikethrough, Highlighter, Baseline, Link2, List, ListOrdered, ListChecks,
   AlignLeft, AlignCenter, AlignRight, Quote, Code2, Table, ImagePlus, Minus, RemoveFormatting, Users, MoreHorizontal,
-  Printer, FileDown, Trash2, FileX2, Rows3, Columns3,
+  Printer, FileDown, Trash2, FileX2, Rows3, Columns3, MessageSquarePlus, MessageSquare, History,
 } from 'lucide-preact'
 import './editor.css'
 import { user, docs, upsertDoc, toast, confirmed } from '../lib/store.js'
 import { navigate } from '../lib/router.js'
-import { api, refreshBoot } from '../lib/api.js'
+import { api, post, refreshBoot } from '../lib/api.js'
 import { DocSocket, fetchState } from '../lib/sync.js'
 import { findDoc, renameDoc, trashDoc, convert, whenCreated } from '../lib/docs.js'
-import { colorFor, debounce, download, pickFile } from '../lib/util.js'
+import { colorFor, cx, debounce, download, pickFile, newId } from '../lib/util.js'
 import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkColors, markColors, keepFocus } from '../ui.jsx'
 import { ShareDialog } from './docs.jsx'
+import { Review as ReviewMarks, suggestKey, isSuggesting, setSuggesting } from './doc-marks.js'
+import { adoptThreads } from './doc-comments.js'
+import { Review, ReviewStyle, reviewItems, reviewAtCaret, startThread, unmarkThread } from './doc-review.jsx'
 
 const REMOTE = 'remote'
 
@@ -61,9 +65,24 @@ function keepWarm(id, state) {
   if (warm.size > 24) warm.delete(warm.keys().next().value)
 }
 
-function extensionsFor(ydoc, awareness, who) {
+// The document format itself: what a past version needs to be shown as well
+// as what the live editor needs.
+function formatExtensions(who) {
   return [
     StarterKit.configure({ undoRedo: false, link: { openOnClick: false, autolink: true } }),
+    TextAlign.configure({ types: ['heading', 'paragraph'] }),
+    Image.configure({ allowBase64: true }),
+    Highlight.configure({ multicolor: true }),
+    TextStyle, Color,
+    TaskList, TaskItem.configure({ nested: true }),
+    TableKit.configure({ table: { resizable: true } }),
+    ReviewMarks.configure({ user: () => who }),
+  ]
+}
+
+function extensionsFor(ydoc, awareness, who) {
+  return [
+    ...formatExtensions(who),
     Collaboration.configure({ document: ydoc }),
     CollaborationCaret.configure({
       provider: { awareness },
@@ -79,12 +98,6 @@ function extensionsFor(ydoc, awareness, who) {
         return caret
       },
     }),
-    TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    Image.configure({ allowBase64: true }),
-    Highlight.configure({ multicolor: true }),
-    TextStyle, Color,
-    TaskList, TaskItem.configure({ nested: true }),
-    TableKit.configure({ table: { resizable: true } }),
     Placeholder.configure({ placeholder: 'Start writing…' }),
     CharacterCount,
   ]
@@ -136,7 +149,7 @@ export async function prewarm() {
 }
 
 // Open a document: local copy first, then the live connection.
-function openDocument(id, element, me, onChange) {
+function openDocument(id, element, me, role, onChange) {
   const t0 = performance.now()
   const ydoc = new Y.Doc()
   const local = new IndexeddbPersistence('os-doc-' + id, ydoc)
@@ -150,7 +163,7 @@ function openDocument(id, element, me, onChange) {
   const t1 = performance.now()
   const editor = new Editor({
     element,
-    extensions: extensionsFor(ydoc, awareness, { name: me.name, color }),
+    extensions: extensionsFor(ydoc, awareness, { name: me.name, color, id: me.id }),
     editorProps: {
       attributes: { class: 'paper', spellcheck: 'true' },
       handlePaste: (view, e) => insertFiles([...(e.clipboardData?.files || [])]),
@@ -180,7 +193,16 @@ function openDocument(id, element, me, onChange) {
   const peers = new Map() // server peer id -> awareness client ids
   let queue = []
   let timer = null
-  const state = { online: false, canEdit: true }
+  // mode: 'edit' changes the text, 'suggest' proposes changes, 'view' reads
+  // the document as it would be with every suggestion accepted. Someone who
+  // may only comment can suggest but never edit directly.
+  const state = { online: false, canEdit: true, mode: role === 'comment' ? 'suggest' : 'edit' }
+  const applyMode = () => {
+    const editable = state.canEdit && role !== 'view' && state.mode !== 'view'
+    if (editor.isEditable !== editable) editor.setEditable(editable)
+    if (isSuggesting(editor) !== (state.mode === 'suggest')) setSuggesting(editor, state.mode === 'suggest')
+  }
+  applyMode()
 
   const flush = () => {
     timer = null
@@ -204,7 +226,7 @@ function openDocument(id, element, me, onChange) {
   const sock = new DocSocket(id, {
     hello: (peer, canEdit) => {
       state.canEdit = canEdit
-      editor.setEditable(canEdit)
+      applyMode()
     },
     base: (seq, bytes) => {
       if (!bytes.length) return
@@ -267,11 +289,23 @@ function openDocument(id, element, me, onChange) {
     sessionStorage.removeItem(key)
   })
 
+  // Comments are shared state outside the text, so they need their own nudge.
+  state.rev = 0
+  ydoc.getMap('comments').observeDeep(() => {
+    state.rev++
+    onChange()
+  })
+
   const onUnload = () => removeAwarenessStates(awareness, [ydoc.clientID], 'unload')
   addEventListener('pagehide', onUnload)
 
   return {
-    editor, awareness, state,
+    editor, awareness, state, ydoc,
+    setMode(mode) {
+      state.mode = mode
+      applyMode()
+      onChange()
+    },
     saved: () => sock.pending.size === 0 && queue.length === 0,
     close() {
       flush()
@@ -286,8 +320,12 @@ function openDocument(id, element, me, onChange) {
   }
 }
 
+// A downloaded copy reads as the document would with every suggestion
+// accepted, without the app's own markup for comments and suggestions.
 async function inlineImages(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html')
+  for (const el of doc.querySelectorAll('del.sug-del')) el.remove()
+  for (const el of doc.querySelectorAll('ins.sug-ins, span.cmt, span.sug-fmt')) el.replaceWith(...el.childNodes)
   for (const img of doc.querySelectorAll('img[src^="/api/blobs/"]')) {
     try {
       const blob = await (await fetch(img.getAttribute('src'))).blob()
@@ -297,7 +335,19 @@ async function inlineImages(html) {
   return doc.body.innerHTML
 }
 
-function Toolbar({ editor }) {
+const modes = [['edit', 'Editing'], ['suggest', 'Suggesting'], ['view', 'Viewing']]
+
+function ModeSelect({ mode, role, onMode }) {
+  return (
+    <span class="mode-select">
+      <select class="select" aria-label="Mode" value={mode} onChange={(e) => onMode(e.target.value)}>
+        {modes.filter(([m]) => m !== 'edit' || role !== 'comment').map(([m, label]) => <option key={m} value={m}>{label}</option>)}
+      </select>
+    </span>
+  )
+}
+
+function Toolbar({ editor, mode, role, onMode, onComment }) {
   const [link, setLink] = useState(null)
   const c = () => editor.chain().focus()
   const on = (name, attrs) => editor.isActive(name, attrs)
@@ -317,7 +367,21 @@ function Toolbar({ editor }) {
       toast(e.message, 'error')
     }
   }
+  const clearFormatting = () => {
+    // Formatting only: comments and suggestions on the text stay.
+    const chain = c()
+    for (const name of Object.keys(editor.schema.marks)) if (!['comment', 'ins', 'del', 'fmt'].includes(name)) chain.unsetMark(name)
+    chain.clearNodes().run()
+  }
   const inTable = on('table')
+  if (mode === 'view') {
+    return (
+      <div class="toolbar" role="toolbar" aria-label="Formatting" style={{ minHeight: 43 }} onMouseDown={keepFocus}>
+        <span class="muted" style={{ padding: '0 6px', fontSize: 13 }}>Reading the document as it would be with every suggestion accepted.</span>
+        <ModeSelect mode={mode} role={role} onMode={onMode} />
+      </div>
+    )
+  }
   return (
     <div class="toolbar" role="toolbar" aria-label="Formatting" onMouseDown={keepFocus}>
       <IconButton icon={Undo2} label="Undo" disabled={!editor.can().undo()} onClick={() => c().undo().run()} />
@@ -366,7 +430,10 @@ function Toolbar({ editor }) {
         { label: 'Insert 5 × 4 table', icon: Table, onSelect: () => c().insertTable({ rows: 5, cols: 4, withHeaderRow: true }).run() },
       ]} />
       <span class="sep" />
-      <IconButton icon={RemoveFormatting} label="Clear formatting" onClick={() => c().unsetAllMarks().clearNodes().run()} />
+      <IconButton icon={RemoveFormatting} label="Clear formatting" onClick={clearFormatting} />
+      <span class="sep" />
+      <IconButton icon={MessageSquarePlus} label="Comment" disabled={editor.state.selection.empty} onClick={onComment} />
+      <ModeSelect mode={mode} role={role} onMode={onMode} />
       {link !== null && (
         <Modal title="Link" onClose={() => setLink(null)} footer={<>
           {editor.isActive('link') && <Button kind="danger" onClick={() => { c().unsetLink().run(); setLink(null) }}>Remove</Button>}
@@ -388,6 +455,13 @@ export default function EditorView({ id }) {
   // signals only, and the editor object itself never changes identity.
   const [tick, bump] = useState(0)
   const [share, setShare] = useState(false)
+  const [rail, setRail] = useState(null) // null: open when there is something in it
+  const [active, setActive] = useState(null) // { kind, id }: the card that is lit
+  const [pending, setPending] = useState(null) // { id, quote }: a comment being written
+  const [history, setHistory] = useState(null) // the version panel, once asked for
+  const [past, setPast] = useState(null) // { version, json, ydoc }: a past version on screen
+  const pastHost = useRef()
+  const caret = useRef('')
   const me = user.value
 
   useEffect(() => {
@@ -399,7 +473,7 @@ export default function EditorView({ id }) {
   useLayoutEffect(() => {
     if (!doc || !host.current) return
     let raf = 0
-    const s = openDocument(id, host.current, me, () => {
+    const s = openDocument(id, host.current, me, doc.role, () => {
       raf ||= requestAnimationFrame(() => {
         raf = 0
         bump((n) => n + 1)
@@ -416,6 +490,33 @@ export default function EditorView({ id }) {
 
   const rename = useRef(debounce((d, title) => renameDoc(d, title), 500)).current
 
+  // The card for whatever the caret rests in lights up; moving out of it
+  // lets go. A card picked by hand stays lit until the caret moves.
+  useEffect(() => {
+    const s = session.current
+    if (!s) return
+    const at = reviewAtCaret(s.editor, s.ydoc)
+    const key = at ? at.kind + at.id : ''
+    if (key === caret.current) return
+    caret.current = key
+    setActive(at)
+  }, [tick])
+
+  // A past version is shown by a second, read-only editor in place of the
+  // live one, which carries on underneath.
+  useEffect(() => {
+    if (!past) return
+    const view = new Editor({ element: pastHost.current, editable: false, extensions: formatExtensions(me), content: past.json, editorProps: { attributes: { class: 'paper' } } })
+    return () => {
+      view.destroy()
+      past.ydoc.destroy()
+    }
+  }, [past])
+
+  const s = session.current
+  const editor = s?.editor
+  const items = useMemo(() => (editor ? reviewItems(editor, s.ydoc) : null), [editor?.state.doc, s?.state.rev])
+
   if (!doc) {
     return (
       <div class="page">
@@ -424,8 +525,53 @@ export default function EditorView({ id }) {
     )
   }
 
-  const s = session.current
-  const editor = s?.editor
+  const role = doc.role
+  const canEdit = role === 'owner' || role === 'edit'
+  const canWrite = !!s && s.state.canEdit && role !== 'view'
+  const mode = s?.state.mode
+  const railOpen = !!editor && !history && (!!pending || (rail ?? (items.open.length > 0 && matchMedia('(min-width: 1101px)').matches)))
+
+  const comment = () => {
+    if (!canWrite || mode === 'view') return
+    const p = startThread(editor, newId(10))
+    if (!p) return toast('Select the text you want to comment on.')
+    setPending(p)
+  }
+  const endPending = (_, posted) => {
+    if (!posted && pending) unmarkThread(editor, pending.id)
+    setPending(null)
+    editor.view.focus() // at once, so typing can carry straight on
+  }
+  const keys = (e) => {
+    if (e.code === 'KeyM' && e.altKey && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      comment()
+    }
+  }
+
+  const pastDoc = (state) => {
+    const ydoc = new Y.Doc()
+    if (state.base.length) Y.applyUpdate(ydoc, state.base)
+    for (const u of state.updates) Y.applyUpdate(ydoc, u)
+    return { ydoc, json: yXmlFragmentToProseMirrorRootNode(ydoc.getXmlFragment('default'), editor.schema).toJSON() }
+  }
+  const openHistory = async () => {
+    const m = await import('./versions.jsx')
+    setHistory(() => m)
+  }
+  const viewPast = (version, state) => setPast(version ? { version, state, ...pastDoc(state) } : null)
+  const HistoryPanel = history?.default
+  const VersionBar = history?.VersionBar
+  // Restoring is an ordinary edit: it syncs to everyone and Undo reverses it.
+  // What is there now is filed as a version first.
+  const restore = async (version, state) => {
+    await post(`/api/docs/${id}/versions`, {})
+    const old = pastDoc(state)
+    adoptThreads(s.ydoc, old.ydoc)
+    editor.chain().setMeta(suggestKey, { skip: true }).setContent(old.json).run()
+    old.ydoc.destroy()
+    setPast(null)
+  }
   const others = s ? [...s.awareness.getStates().entries()].filter(([cid, st]) => cid !== s.awareness.clientID && st.user).map(([, st]) => st.user) : []
   const unique = [...new Map(others.map((u) => [u.id, u])).values()]
   const status = !s ? '' : !s.state.online ? 'Offline · saved on this device' : s.saved() ? 'Saved' : 'Saving…'
@@ -443,17 +589,24 @@ export default function EditorView({ id }) {
   }
 
   return (
-    <div class="doc-view" style={{ position: 'relative' }}>
+    <div class="doc-view" style={{ position: 'relative' }} onKeyDown={keys}>
       <div class="doc-bar">
         <IconButton icon={ArrowLeft} label="All docs" onClick={() => navigate('/docs')} />
-        <input class="doc-title" aria-label="Title" placeholder="Untitled" value={title} disabled={doc.role === 'view'}
+        <input class="doc-title" aria-label="Title" placeholder="Untitled" value={title} disabled={!canEdit}
           onInput={(e) => { upsertDoc({ ...doc, title: e.target.value }); rename(doc, e.target.value) }}
           onKeyDown={(e) => e.key === 'Enter' && editor?.commands.focus('start')} />
         <span class="save-state">{status}</span>
         <span class="grow" />
         <span class="presence">{unique.slice(0, 5).map((u) => <span key={u.id} title={u.name}><Avatar name={u.name} id={u.id} size={28} /></span>)}</span>
+        {editor && (
+          <span class="rv-count">
+            <IconButton icon={MessageSquare} label="Comments" active={railOpen} onClick={() => { setHistory(null); setPast(null); setRail(!railOpen) }} />
+            {items.open.length > 0 && <span class="count">{items.open.length}</span>}
+          </span>
+        )}
         <Button icon={Users} kind={doc.access === 'org' || doc.shares?.length ? 'default' : 'primary'} onClick={() => setShare(true)}>Share</Button>
         <Menu align="right" trigger={<IconButton icon={MoreHorizontal} label="More" />} items={[
+          canEdit && { label: 'Version history', icon: History, onSelect: openHistory },
           { label: 'Print or save as PDF', icon: Printer, onSelect: () => window.print() },
           { divider: true },
           { label: 'Download as Word (.docx)', icon: FileDown, onSelect: () => exportAs('docx') },
@@ -463,11 +616,21 @@ export default function EditorView({ id }) {
           doc.role === 'owner' && { label: 'Move to trash', icon: Trash2, danger: true, onSelect: () => { trashDoc(doc); navigate('/docs') } },
         ]} />
       </div>
-      {editor && s.state.canEdit && doc.role !== 'view' && <Toolbar editor={editor} tick={tick} />}
-      <div class="doc-scroll" onMouseDown={(e) => e.target === e.currentTarget && editor?.commands.focus('end')}>
-        <div ref={host} />
+      {past && VersionBar && <VersionBar version={past.version} onBack={() => setPast(null)} onRestore={() => restore(past.version, past.state).then(() => toast('Version restored'), (e) => toast(e.message, 'error'))} />}
+      {editor && canWrite && !past && <Toolbar editor={editor} tick={tick} mode={mode} role={role} onMode={s.setMode} onComment={comment} />}
+      <div class="doc-body">
+        <div class="doc-main">
+          <div class={cx('doc-scroll', mode === 'view' && 'clean')} onMouseDown={(e) => e.target === e.currentTarget && !past && editor?.commands.focus('end')}>
+            <div ref={host} style={past ? { display: 'none' } : undefined} />
+            <div ref={pastHost} />
+          </div>
+          {editor && !past && <div class="doc-foot">{editor.storage.characterCount.words()} words</div>}
+        </div>
+        {HistoryPanel
+          ? <HistoryPanel doc={doc} viewing={past?.version.id || null} onView={viewPast} onRestore={restore} onClose={() => { setHistory(null); setPast(null) }} />
+          : railOpen && <Review editor={editor} ydoc={s.ydoc} me={me} role={canWrite ? role : 'view'} items={items} active={active} onActive={setActive} pending={pending} onPending={endPending} onClose={() => { if (pending) endPending(null, false); setRail(false) }} tick={tick} />}
       </div>
-      {editor && <div class="doc-foot">{editor.storage.characterCount.words()} words</div>}
+      {editor && <ReviewStyle items={items} active={active} pending={pending?.id} />}
       {share && <ShareDialog doc={doc} onClose={() => setShare(false)} />}
     </div>
   )

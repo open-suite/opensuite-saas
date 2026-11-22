@@ -192,6 +192,11 @@ func (s *Server) routes() http.Handler {
 	m.HandleFunc("GET /api/docs/{id}/sync", s.auth(s.handleDocSync))
 	m.HandleFunc("GET /api/docs/{id}/state", s.auth(s.handleDocState))
 	m.HandleFunc("GET /api/search", s.auth(s.handleSearch))
+	m.HandleFunc("GET /api/docs/{id}/versions", s.auth(s.handleVersionList))
+	m.HandleFunc("POST /api/docs/{id}/versions", s.auth(s.handleVersionCreate))
+	m.HandleFunc("GET /api/docs/{id}/versions/{version}", s.auth(s.handleVersionGet))
+	m.HandleFunc("PATCH /api/docs/{id}/versions/{version}", s.auth(s.handleVersionRename))
+	m.HandleFunc("POST /api/docs/{id}/versions/{version}/restore", s.auth(s.handleVersionRestore))
 	m.HandleFunc("POST /api/convert", s.auth(s.handleConvert))
 	m.HandleFunc("POST /api/blobs", s.auth(s.handleBlobPut))
 	m.HandleFunc("GET /api/blobs/{id}", s.auth(s.handleBlobGet))
@@ -237,6 +242,8 @@ func (s *Server) janitor(ctx context.Context) {
 			s.w.Exec(`DELETE FROM docs WHERE trashed > 0 AND trashed < ?`, now()-30*86400)
 			s.w.Exec(`DELETE FROM doc_updates WHERE doc_id NOT IN (SELECT id FROM docs)`)
 			s.filesJanitor()
+			s.w.Exec(`DELETE FROM doc_versions WHERE doc_id NOT IN (SELECT id FROM docs)`)
+			s.w.Exec(`DELETE FROM doc_editors WHERE doc_id NOT IN (SELECT id FROM docs)`)
 		}
 	}
 }

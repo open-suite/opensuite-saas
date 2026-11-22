@@ -101,13 +101,18 @@ export function colName(c) {
 }
 
 export class Sheet {
-  constructor({ id, me, title, onChange }) {
+  // frozen: { base, updates } shows a past version instead: the same grid,
+  // read-only and with no live connection.
+  constructor({ id, me, title, onChange, frozen = null }) {
     this.id = id
     this.me = me
     this.title = title
     this.onChange = onChange
+    this.frozen = frozen
     this.model = null
     this.sheet = 0
+    this.sheetId = null // the open sheet's own id, which survives reordering
+    this.rev = 0 // goes up whenever the workbook's content may have changed
     this.sel = { row: 1, col: 1, r1: 1, c1: 1, r2: 1, c2: 1 }
     this.draft = null // text being typed, or null when not editing
     this.base = null // snapshot bytes the log builds on
@@ -134,6 +139,10 @@ export class Sheet {
     this.scroll = scroll
     this.spacer = spacer
     this.ctx = canvas.getContext('2d')
+    if (this.frozen) {
+      engine().then(() => this.closed || this.start(null))
+      return
+    }
     const hot = warm.get(this.id)
     // With the engine loaded and a copy in memory, the grid is drawn in the
     // same frame as the click that opened it.
@@ -150,6 +159,13 @@ export class Sheet {
         this.model = Model.fromBytes(cached.bytes, 'en')
         this.base = cached.bytes
         since = cached.seq
+      } catch {}
+    }
+    if (this.frozen) {
+      this.canEdit = false
+      try {
+        this.model = this.frozen.base.length ? Model.fromBytes(this.frozen.base, 'en') : blank(this.title)
+        for (const u of this.frozen.updates) this.apply(u)
       } catch {}
     }
     if (!this.model) this.model = blank(this.title)
@@ -174,6 +190,7 @@ export class Sheet {
     if (!document.activeElement || document.activeElement === document.body) wrap.focus()
     // Where opening a sheet spends its time, for tests/perf.cjs.
     this.timing = { model: t1 - t0, layout: t2 - t1, paint: performance.now() - t2 }
+    if (this.frozen) return
     window.__sheetTiming = this.timing
 
     this.sock = new DocSocket(this.id, {
@@ -182,8 +199,9 @@ export class Sheet {
         this.onChange()
       },
       base: (seq, bytes) => {
-        if (!bytes.length) return // a brand-new sheet: keep what is on screen
-        this.base = bytes.slice()
+        if (!bytes.length && !seq) return // a brand-new sheet: keep what is on screen
+        // A base also arrives mid-session when a past version is restored.
+        this.base = bytes.length ? bytes.slice() : null
         this.log = []
         this.rebuild()
       },
@@ -245,6 +263,7 @@ export class Sheet {
       const lines = []
       let size = 0
       m.getWorksheetsProperties().forEach((ws, s) => {
+        if (ws.state && ws.state !== 'visible') return // the hidden sheet that stores charts
         lines.push(ws.name)
         const rows = new Set()
         for (let c = 1; c <= 60; c++) for (const r of m.getRowsWithData(s, c)) rows.add(r)
@@ -276,9 +295,15 @@ export class Sheet {
   }
 
   afterLoad() {
-    const n = this.model.getWorksheetsProperties().length
-    if (this.sheet >= n) this.sheet = 0
+    // Stay on the same sheet when others add, remove or reorder sheets, and
+    // never land on a hidden one (the workbook keeps chart data in those).
+    const all = this.model.getWorksheetsProperties()
+    let i = all.findIndex((sh) => sh.sheet_id === this.sheetId && sh.state === 'visible')
+    if (i < 0) i = all[this.sheet]?.state === 'visible' && this.sheetId === null ? this.sheet : all.findIndex((sh) => sh.state === 'visible')
+    this.sheet = Math.max(0, i)
+    this.sheetId = all[this.sheet]?.sheet_id ?? null
     this.model.setSelectedSheet(this.sheet)
+    this.rev++
     this.cells.clear()
     this.measure()
     this.onChange()
@@ -322,6 +347,7 @@ export class Sheet {
   }
 
   changed(local) {
+    this.rev++
     this.cells.clear()
     this.measure()
     this.draw()
@@ -486,6 +512,7 @@ export class Sheet {
     this.canvas.style.width = w + 'px'
     this.canvas.style.height = h + 'px'
     this.paint()
+    this.onView?.()
   }
 
   draw() {
@@ -830,6 +857,7 @@ export class Sheet {
   useSheet(i) {
     if (this.draft !== null) this.commit()
     this.sheet = i
+    this.sheetId = this.sheets[i]?.sheet_id ?? null
     this.model.setSelectedSheet(i)
     this.R = 0
     this.C = 0
@@ -844,6 +872,7 @@ export class Sheet {
 
   onScroll = () => {
     this.draw()
+    this.onView?.() // whatever floats over the grid moves with it
     if (this.draft !== null) this.onChange()
     // Grow the sheet as the reader approaches its edge.
     const s = this.scroll
@@ -884,6 +913,7 @@ export class Sheet {
     if (e.button !== 0 || !this.model) return
     const h = this.hit(e)
     if (!h.inside) return // scrollbars
+    this.onGridDown?.()
     const edge = this.edge(h)
     if (edge && this.canEdit) {
       e.preventDefault()

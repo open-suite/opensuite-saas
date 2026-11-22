@@ -98,7 +98,7 @@ func scanNode(row interface{ Scan(...any) error }, extra ...any) (*Node, error) 
 	return n, nil
 }
 
-var roleRank = map[string]int{"": 0, "view": 1, "edit": 2, "owner": 3}
+var roleRank = map[string]int{"": 0, "view": 1, "comment": 2, "edit": 3, "owner": 4}
 
 func bestRole(a, b string) string {
 	if roleRank[b] > roleRank[a] {
@@ -106,8 +106,6 @@ func bestRole(a, b string) string {
 	}
 	return a
 }
-
-func canEdit(role string) bool { return role == "owner" || role == "edit" }
 
 // cleanName makes a display name safe to store and to put in a header.
 func cleanName(s string) string {

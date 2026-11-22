@@ -30,8 +30,13 @@ const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join(''
 
 // fetchState downloads a document's whole state in one request, without a
 // live connection: { base: bytes, updates: [bytes], seq }.
-export async function fetchState(id) {
-  const res = await fetch(`/api/docs/${id}/state`, { credentials: 'same-origin' })
+export const fetchState = (id) => fetchFrames(`/api/docs/${id}/state`)
+
+// fetchVersion downloads one past version in the same form.
+export const fetchVersion = (id, version) => fetchFrames(`/api/docs/${id}/versions/${version}`)
+
+async function fetchFrames(url) {
+  const res = await fetch(url, { credentials: 'same-origin' })
   if (!res.ok) throw new Error('state ' + res.status)
   const buf = new Uint8Array(await res.arrayBuffer())
   const out = { base: new Uint8Array(0), updates: [], seq: 0 }
