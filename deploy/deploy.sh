@@ -29,6 +29,7 @@ rsync -az --delete "$ROOT/deploy/" "$HOST:$REMOTE/deploy/"
 
 echo "== install"
 # Optional settings pass through from this shell: OS_SIGNUP (open|code|closed),
-# OS_SIGNUP_CODE, OS_OPERATORS (comma-separated sign-in addresses) and
-# OS_MAIL_RELAY (host:port:user:password for an outbound smarthost).
-ssh "$HOST" "OS_SIGNUP='${OS_SIGNUP:-}' OS_SIGNUP_CODE='${OS_SIGNUP_CODE:-}' OS_OPERATORS='${OS_OPERATORS:-}' OS_MAIL_RELAY='${OS_MAIL_RELAY:-}' bash $REMOTE/deploy/install.sh '$DOMAIN' '$EMAIL' '$MAIL_DOMAIN'"
+# OS_SIGNUP_CODE, OS_OPERATORS (comma-separated sign-in addresses),
+# OS_MAIL_RELAY (host:port:user:password for an outbound smarthost), and
+# OS_SLACK_CLIENT_ID / OS_SLACK_CLIENT_SECRET / OS_SLACK_SIGNING_SECRET.
+ssh "$HOST" "OS_SIGNUP='${OS_SIGNUP:-}' OS_SIGNUP_CODE='${OS_SIGNUP_CODE:-}' OS_OPERATORS='${OS_OPERATORS:-}' OS_MAIL_RELAY='${OS_MAIL_RELAY:-}' OS_SLACK_CLIENT_ID='${OS_SLACK_CLIENT_ID:-}' OS_SLACK_CLIENT_SECRET='${OS_SLACK_CLIENT_SECRET:-}' OS_SLACK_SIGNING_SECRET='${OS_SLACK_SIGNING_SECRET:-}' bash $REMOTE/deploy/install.sh '$DOMAIN' '$EMAIL' '$MAIL_DOMAIN'"

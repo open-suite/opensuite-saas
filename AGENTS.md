@@ -125,6 +125,22 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   `tests/e2e-backdrop.cjs` reads the pixels; give it `OS_PORTRAIT` to judge
   edges on a real photo.
 
+- **External Slack channels** (`server/slack.go`, `web/src/apps/connect.jsx`,
+  added 2026-11-23). Optional, config-gated Slack Connect alternative inside
+  the single Go binary (`OS_SLACK_CLIENT_ID`, `OS_SLACK_CLIENT_SECRET`,
+  `OS_SLACK_SIGNING_SECRET`). When unset, no Slack routes or UI appear. When
+  enabled, an Open Suite user creates a 7-day invite link on a Chat room; the
+  external partner completes standard Slack OAuth2 (works on Slack Free) and
+  picks or creates a Slack channel. Slack → Matrix uses the Events API webhook
+  (`/api/slack/events`, verified via HMAC-SHA256, acked immediately, no
+  `conversations.history` polling) and injects Matrix ghost users (`@slack_*`)
+  through Tuwunel's appservice API (`opensuite slack-manifest`). Matrix → Slack
+  receives loopback appservice transactions (`/_opensuite/as/*`, blocked in
+  nginx, authenticated via `hs_token`) and posts via `chat.postMessage`
+  (`chat:write.customize`) with per-channel pacing + `Retry-After` handling,
+  plus `files.getUploadURLExternal` for files. Bot tokens are encrypted at rest
+  with AES-256-GCM derived from `OS_SECRET`.
+
 ## Engines: facts verified on 2026-11-21
 
 - **Stalwart 1.1.1** has no TOML and no REST admin API any more. All

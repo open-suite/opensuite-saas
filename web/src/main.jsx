@@ -19,6 +19,7 @@ import { Login, Signup, SetPassword } from './apps/auth.jsx'
 import { Home } from './apps/home.jsx'
 import { Drive, FilePicker } from './apps/files.jsx'
 import { PublicLink } from './apps/public.jsx'
+import { SlackConnect } from './apps/connect.jsx'
 import { startFiles } from './lib/files.js'
 import { Mail } from './apps/mail.jsx'
 import { Chat } from './apps/chat.jsx'
@@ -118,6 +119,9 @@ function App() {
 
   // So does a public link to a file or folder.
   if (p[0] === 'f' && p[1]) return <><PublicLink token={p[1]} at={p[2]} /><Toasts /></>
+
+  // External partners connecting a Slack channel also need no Open Suite account.
+  if (p[0] === 'connect' && p[1] === 'slack' && p[2]) return <><SlackConnect token={p[2]} /><Toasts /></>
 
   if (!u) {
     // Nothing known yet about this visitor: wait for the server rather than
