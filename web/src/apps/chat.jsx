@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { Plus, Paperclip, FolderOpen, SendHorizontal, Video, MoreHorizontal, UserPlus, LogOut, MessageSquare, ArrowLeft, FileDown } from 'lucide-preact'
+import { Plus, Paperclip, FolderOpen, SendHorizontal, Video, MoreHorizontal, UserPlus, LogOut, MessageSquare, ArrowLeft, FileDown, Link2, Copy, Check, Trash2 } from 'lucide-preact'
 import { pickFromFiles, fetchFile } from '../lib/files.js'
 import './chat.css'
 import { boot, people, peopleByMx, user, toast } from '../lib/store.js'
 import { parts, navigate } from '../lib/router.js'
+import { get, post, del } from '../lib/api.js'
 import {
-  rooms, chatReady, roomTitle, directPeer, nameOf, sendText, sendFile, markRead, sendTyping, loadOlder, openDirect,
+  rooms, chatReady, roomTitle, directPeer, nameOf, isExternalMx, sendText, sendFile, markRead, sendTyping, loadOlder, openDirect,
   createRoom, inviteTo, leaveRoom, mediaUrl,
 } from '../lib/matrix.js'
 import { newMeeting, meetLink } from '../lib/docs.js'
@@ -95,17 +96,37 @@ function Timeline({ room }) {
     }
     const first = newDay || !prev || prev.sender !== e.sender || e.ts - prev.ts > 300000
     const name = nameOf(e.sender, room)
+    const ext = isExternalMx(e.sender)
+    const reacts = e.reactions ? Object.entries(e.reactions) : []
     out.push(
       <div class={cx('bubble-row', first && 'first', e.pending && 'pending', e.failed && 'failed')} key={e.id}>
         <div class="gutter">{first && <Avatar name={name} id={peopleByMx.value[e.sender]?.id || e.sender} size={34} />}</div>
         <div class="grow">
-          {first && <div class="who"><b>{name}</b><time>{clock(e.ts)}</time></div>}
-          {e.kind === 'text' && <Text body={e.body} />}
+          {first && (
+            <div class="who">
+              <b>{name}</b>
+              {ext && <span class="ch-ext-tag">External</span>}
+              <time>{clock(e.ts)}</time>
+            </div>
+          )}
+          {e.kind === 'text' && (
+            <div class="ch-msg-line">
+              <Text body={e.body} />
+              {e.edited && <span class="ch-edited">(edited)</span>}
+            </div>
+          )}
           {e.kind === 'image' && <Shot mxc={e.url} alt={e.body} />}
           {e.kind === 'file' && (
             <button class="att" style={{ marginTop: 4, background: 'transparent' }} onClick={async () => download(await (await fetch(await mediaUrl(e.url))).blob(), e.body)}>
               <FileDown size={15} /><span class="ellipsis">{e.body}</span>{e.size && <span class="muted">{bytes(e.size)}</span>}
             </button>
+          )}
+          {reacts.length > 0 && (
+            <div class="ch-reacts">
+              {reacts.map(([key, ids]) => (
+                <span key={key} class="ch-react">{key} <b>{ids.length}</b></span>
+              ))}
+            </div>
           )}
           {e.failed && <div class="muted" style={{ fontSize: 12 }}>Not sent. Check your connection and try again.</div>}
         </div>
@@ -194,14 +215,114 @@ function PeoplePicker({ title, action, exclude = [], withName, onClose, onDone }
   )
 }
 
+function SlackModal({ room, state, onChange, onClose }) {
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState('')
+  const base = '/api/chat/rooms/' + encodeURIComponent(room.id) + '/slack'
+
+  const createInvite = async () => {
+    setBusy(true)
+    try {
+      const inv = await post(base + '/invites', { roomName: roomTitle(room) })
+      onChange({ ...state, invites: [inv, ...(state.invites || [])] })
+      copy(inv.url)
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const copy = (url) => {
+    navigator.clipboard?.writeText(url).catch(() => {})
+    setCopied(url)
+    toast('Invite link copied')
+    setTimeout(() => setCopied((c) => (c === url ? '' : c)), 2500)
+  }
+
+  const revoke = async (token) => {
+    try {
+      await del(base + '/invites/' + encodeURIComponent(token))
+      onChange({ ...state, invites: state.invites.filter((i) => i.token !== token) })
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+  }
+
+  const unlink = async (id) => {
+    try {
+      await del(base + '/links/' + encodeURIComponent(id))
+      onChange({ ...state, links: state.links.filter((l) => l.id !== id) })
+      toast('Slack channel disconnected')
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+  }
+
+  return (
+    <Modal title="External Slack channels" onClose={onClose} width={500} footer={<Button onClick={onClose}>Done</Button>}>
+      <p class="muted" style={{ marginTop: 0, lineHeight: 1.5 }}>
+        Connect this conversation to a channel in an external Slack workspace. Works on any Slack plan. Messages sent while connected pass through Slack&apos;s servers.
+      </p>
+
+      {state.links.length > 0 && (
+        <div class="ch-slk-sec">
+          <h4>Connected channels</h4>
+          {state.links.map((l) => (
+            <div key={l.id} class="ch-slk-row">
+              <div class="grow" style={{ minWidth: 0 }}>
+                <div class="ellipsis" style={{ fontWeight: 600 }}>#{l.channelName || l.channelId}</div>
+                <div class="muted ellipsis" style={{ fontSize: 12.5 }}>{l.teamName}</div>
+              </div>
+              <Button kind="danger" onClick={() => unlink(l.id)}>Disconnect</Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div class="ch-slk-sec">
+        <div class="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <h4 style={{ margin: 0 }}>Invite links</h4>
+          <Button kind="primary" icon={Link2} busy={busy} onClick={createInvite}>Create invite link</Button>
+        </div>
+        {state.invites.length === 0 ? (
+          <p class="muted" style={{ fontSize: 13, margin: '6px 0 0' }}>
+            Send a one-time invite link to someone at the partner organisation. They authorise their Slack workspace and pick a channel — no Open Suite account needed.
+          </p>
+        ) : (
+          state.invites.map((inv) => (
+            <div key={inv.token} class="ch-slk-row">
+              <input class="input ch-slk-url" readOnly value={inv.url} onClick={(e) => e.target.select()} />
+              <IconButton icon={copied === inv.url ? Check : Copy} label="Copy link" onClick={() => copy(inv.url)} />
+              <IconButton icon={Trash2} label="Revoke invite" onClick={() => revoke(inv.token)} />
+            </div>
+          ))
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 export function Chat() {
   const roomId = parts.value[1] ? decodeURIComponent(parts.value[1]) : null
   const [dialog, setDialog] = useState(null)
+  const [slack, setSlack] = useState({ links: [], invites: [] })
+  const slackOn = !!boot.value.chat?.slack
   const all = Object.values(rooms.value).sort((a, b) => b.ts - a.ts)
   const room = roomId ? rooms.value[roomId] : null
   const me = boot.value.chat.userId
   const withDm = new Set(all.map(directPeer).filter(Boolean))
   const others = people.value.filter((p) => p.mx && p.mx !== me && p.status === 'active' && !withDm.has(p.mx))
+
+  useEffect(() => {
+    setSlack({ links: [], invites: [] })
+    if (!roomId || !slackOn) return
+    let live = true
+    get('/api/chat/rooms/' + encodeURIComponent(roomId) + '/slack', { quiet: true })
+      .then((d) => live && setSlack({ links: d.links || [], invites: d.invites || [] }))
+      .catch(() => {})
+    return () => { live = false }
+  }, [roomId, slackOn])
 
   useEffect(() => {
     const onVis = () => document.visibilityState === 'visible' && roomId && markRead(roomId)
@@ -271,10 +392,21 @@ export function Chat() {
               <Button icon={Video} onClick={startCall}>Meet</Button>
               <Menu align="right" trigger={<IconButton icon={MoreHorizontal} label="More" />} items={[
                 { label: 'Add people', icon: UserPlus, onSelect: () => setDialog('invite') },
+                slackOn && { label: 'Connect Slack', icon: Link2, onSelect: () => setDialog('slack') },
                 { divider: true },
                 { label: 'Leave conversation', icon: LogOut, danger: true, onSelect: async () => { await leaveRoom(room.id).catch(() => {}); navigate('/chat') } },
               ]} />
             </div>
+            {slack.links.length > 0 && (
+              <div class="ch-ext-bar">
+                <Link2 size={14} />
+                <span class="grow ellipsis">
+                  Connected to Slack:{' '}
+                  {slack.links.map((l) => `#${l.channelName || l.channelId} (${l.teamName})`).join(', ')}
+                </span>
+                <button type="button" class="ch-ext-btn" onClick={() => setDialog('slack')}>Manage</button>
+              </div>
+            )}
             <Timeline room={room} />
             <div class="typing">{room.typing?.length > 0 && `${room.typing.map((m) => nameOf(m, room)).join(', ')} ${room.typing.length > 1 ? 'are' : 'is'} typing…`}</div>
             <Composer room={room} />
@@ -297,6 +429,9 @@ export function Chat() {
           setDialog(null)
           for (const m of mxids) await inviteTo(room.id, m).catch(() => toast("Someone couldn't be added.", 'error'))
         }} />
+      )}
+      {dialog === 'slack' && room && (
+        <SlackModal room={room} state={slack} onChange={setSlack} onClose={() => setDialog(null)} />
       )}
     </div>
   )

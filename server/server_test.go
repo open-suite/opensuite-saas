@@ -30,7 +30,7 @@ func newTestServer(t *testing.T, tweak func(*Config)) (*Server, *httptest.Server
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{cfg: cfg, w: w, r: r, lim: newLimiter(), http: &http.Client{Timeout: 5 * time.Second}}
+	s := &Server{cfg: cfg, w: w, r: r, lim: newLimiter(), slack: newSlackBridge(), http: &http.Client{Timeout: 5 * time.Second}}
 	s.hub = newHub(s)
 	s.tls = newCertManager(s)
 	ts := httptest.NewServer(s.routes())

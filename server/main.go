@@ -41,19 +41,27 @@ type Config struct {
 	MailAdmin string // user:password of the engine admin
 	MailHost  string // public MX host name, e.g. mail.opensuite.online
 
+	SlackClientID      string
+	SlackClientSecret  string
+	SlackSigningSecret string
+	SlackAPIBase       string // optional override for tests
+	SlackOAuthBase     string // optional override for tests
+	BridgeURL          string // loopback URL Tuwunel calls for appservice transactions
+
 	AcmeEmail string
 	AcmeURL   string
 	CertDir   string
 }
 
 type Server struct {
-	cfg  Config
-	w    *sql.DB // single writer
-	r    *sql.DB // readers
-	hub  *Hub
-	tls  *CertManager
-	lim  *limiter
-	http *http.Client
+	cfg   Config
+	w     *sql.DB // single writer
+	r     *sql.DB // readers
+	hub   *Hub
+	tls   *CertManager
+	lim   *limiter
+	slack *slackBridge
+	http  *http.Client
 }
 
 func env(k, def string) string {
@@ -98,10 +106,16 @@ func main() {
 		LiveKitSecret: env("OS_LIVEKIT_SECRET", ""),
 		MatrixURL:     strings.TrimRight(env("OS_MATRIX_URL", ""), "/"),
 		MatrixSecret:  env("OS_MATRIX_SECRET", ""),
-		MailURL:       strings.TrimRight(env("OS_MAIL_URL", ""), "/"),
-		MailAdmin:     env("OS_MAIL_ADMIN", ""),
-		AcmeEmail:     env("OS_ACME_EMAIL", ""),
-		AcmeURL:       env("OS_ACME_URL", "https://acme-v02.api.letsencrypt.org/directory"),
+		MailURL:            strings.TrimRight(env("OS_MAIL_URL", ""), "/"),
+		MailAdmin:          env("OS_MAIL_ADMIN", ""),
+		SlackClientID:      env("OS_SLACK_CLIENT_ID", ""),
+		SlackClientSecret:  env("OS_SLACK_CLIENT_SECRET", ""),
+		SlackSigningSecret: env("OS_SLACK_SIGNING_SECRET", ""),
+		SlackAPIBase:       env("OS_SLACK_API_BASE", ""),
+		SlackOAuthBase:     env("OS_SLACK_OAUTH_BASE", ""),
+		BridgeURL:          env("OS_BRIDGE_URL", ""),
+		AcmeEmail:          env("OS_ACME_EMAIL", ""),
+		AcmeURL:            env("OS_ACME_URL", "https://acme-v02.api.letsencrypt.org/directory"),
 	}
 	cfg.MailDomain = strings.ToLower(env("OS_MAIL_DOMAIN", cfg.Domain))
 	cfg.MatrixName = env("OS_MATRIX_NAME", cfg.Domain)
@@ -119,9 +133,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	s := &Server{cfg: cfg, w: w, r: r, lim: newLimiter(), http: &http.Client{Timeout: 20 * time.Second}}
+	s := &Server{cfg: cfg, w: w, r: r, lim: newLimiter(), slack: newSlackBridge(), http: &http.Client{Timeout: 20 * time.Second}}
 	s.hub = newHub(s)
 	s.tls = newCertManager(s)
+
+	// "opensuite slack-manifest" prints the Matrix appservice registration YAML.
+	if len(os.Args) == 2 && os.Args[1] == "slack-manifest" {
+		os.Stdout.WriteString(s.slackManifest())
+		return
+	}
 
 	// "opensuite mail-setup <engine url>" is run once by the installer.
 	if len(os.Args) == 3 && os.Args[1] == "mail-setup" {
@@ -210,6 +230,7 @@ func (s *Server) routes() http.Handler {
 	m.HandleFunc("POST /api/meet/{code}/join", s.handleMeetJoin)
 
 	m.HandleFunc("POST /api/chat/token", s.auth(s.handleChatToken))
+	s.routesSlack(m)
 
 	// mail: one JMAP endpoint, proxied with the caller's mailbox credentials
 	m.HandleFunc("POST /api/mail/jmap", s.auth(s.handleJMAP))
@@ -242,6 +263,7 @@ func (s *Server) janitor(ctx context.Context) {
 			s.w.Exec(`DELETE FROM docs WHERE trashed > 0 AND trashed < ?`, now()-30*86400)
 			s.w.Exec(`DELETE FROM doc_updates WHERE doc_id NOT IN (SELECT id FROM docs)`)
 			s.filesJanitor()
+			s.slackJanitor()
 			s.w.Exec(`DELETE FROM doc_versions WHERE doc_id NOT IN (SELECT id FROM docs)`)
 			s.w.Exec(`DELETE FROM doc_editors WHERE doc_id NOT IN (SELECT id FROM docs)`)
 		}

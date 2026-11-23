@@ -54,6 +54,10 @@ function commit(next) {
   persist()
 }
 
+export function isExternalMx(mxid) {
+  return typeof mxid === 'string' && mxid.startsWith('@slack_')
+}
+
 export function nameOf(mxid, room) {
   return peopleByMx.value[mxid]?.name || room?.members?.[mxid]?.name || mxid?.slice(1).split(':')[0] || ''
 }
@@ -76,11 +80,22 @@ function toEvent(ev) {
   const c = ev.content || {}
   const out = { id: ev.event_id, sender: ev.sender, ts: ev.origin_server_ts, txn: ev.unsigned?.transaction_id }
   if (ev.type === 'm.room.message') {
-    if (c['m.relates_to']?.rel_type === 'm.replace') return null
+    if (c['m.relates_to']?.rel_type === 'm.replace') {
+      const target = c['m.relates_to']?.event_id
+      const body = c['m.new_content']?.body || c.body
+      return target && body ? { ...out, kind: 'edit', target, body } : null
+    }
     if (c.msgtype === 'm.image') return { ...out, kind: 'image', body: c.body, url: c.url, w: c.info?.w, h: c.info?.h }
     if (c.msgtype === 'm.file' || c.msgtype === 'm.video' || c.msgtype === 'm.audio') return { ...out, kind: 'file', body: c.body, url: c.url, size: c.info?.size }
     if (!c.body) return null
     return { ...out, kind: 'text', body: c.body }
+  }
+  if (ev.type === 'm.reaction') {
+    const rel = c['m.relates_to']
+    if (rel?.rel_type === 'm.annotation' && rel.event_id && rel.key) {
+      return { ...out, kind: 'reaction', target: rel.event_id, key: rel.key }
+    }
+    return null
   }
   if (ev.type === 'm.room.member' && ev.state_key) {
     const prev = ev.unsigned?.prev_content?.membership
@@ -88,8 +103,47 @@ function toEvent(ev) {
     if (c.membership === 'leave' && prev === 'join') return { ...out, kind: 'note', who: ev.state_key, body: 'left' }
     return null
   }
-  if (ev.type === 'm.room.redaction') return null
+  if (ev.type === 'm.room.redaction' && ev.redacts) return { ...out, kind: 'redact', target: ev.redacts }
   return null
+}
+
+function foldTimeline(timeline, events) {
+  let out = timeline
+  for (const e of events) {
+    if (e.kind === 'edit') {
+      out = out.map((m) => (m.id === e.target ? { ...m, body: e.body, edited: true } : m))
+      continue
+    }
+    if (e.kind === 'redact') {
+      out = out
+        .filter((m) => m.id !== e.target)
+        .map((m) => {
+          if (!m.reactions) return m
+          let changed = false
+          const next = {}
+          for (const [k, ids] of Object.entries(m.reactions)) {
+            const kept = ids.filter((id) => id !== e.target)
+            if (kept.length !== ids.length) changed = true
+            if (kept.length) next[k] = kept
+          }
+          return changed ? { ...m, reactions: next } : m
+        })
+      continue
+    }
+    if (e.kind === 'reaction') {
+      out = out.map((m) => {
+        if (m.id !== e.target) return m
+        const cur = m.reactions || {}
+        const ids = cur[e.key] || []
+        if (ids.includes(e.id)) return m
+        return { ...m, reactions: { ...cur, [e.key]: [...ids, e.id] } }
+      })
+      continue
+    }
+    out = out.filter((m) => m.id !== e.id && !(m.pending && e.txn && m.txn === e.txn))
+    out = [...out, e]
+  }
+  return out
 }
 
 function applyState(room, ev) {
@@ -114,12 +168,9 @@ function applySync(data) {
       if (e) fresh.push(e)
     }
     if (fresh.length) {
-      const ids = new Set(fresh.map((e) => e.id))
-      const txns = new Set(fresh.map((e) => e.txn).filter(Boolean))
-      // Drop local echoes that the server has now confirmed.
-      timeline = timeline.filter((e) => !ids.has(e.id) && !(e.pending && txns.has(e.txn)))
-      timeline = [...timeline, ...fresh]
-      room.ts = fresh[fresh.length - 1].ts || room.ts
+      timeline = foldTimeline(timeline, fresh)
+      const lastMsg = [...fresh].reverse().find((e) => e.kind !== 'edit' && e.kind !== 'redact' && e.kind !== 'reaction')
+      if (lastMsg?.ts) room.ts = lastMsg.ts
     }
     room.timeline = timeline
     if (j.unread_notifications) room.unread = j.unread_notifications.notification_count || 0
@@ -275,7 +326,7 @@ export async function loadOlder(roomId) {
   const room = rooms.value[roomId]
   if (!room?.prev) return false
   const data = await mx('GET', `/rooms/${encodeURIComponent(roomId)}/messages?dir=b&limit=50&from=${encodeURIComponent(room.prev)}`)
-  const older = (data.chunk || []).map(toEvent).filter(Boolean).reverse()
+  const older = (data.chunk || []).map(toEvent).filter((e) => e && e.kind !== 'edit' && e.kind !== 'redact' && e.kind !== 'reaction').reverse()
   const cur = rooms.value[roomId]
   const have = new Set(cur.timeline.map((e) => e.id))
   commit({ ...rooms.value, [roomId]: { ...cur, prev: data.end || null, timeline: [...older.filter((e) => !have.has(e.id)), ...cur.timeline] } })

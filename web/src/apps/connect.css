@@ -1,0 +1,94 @@
+.slk-page {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--sunken);
+}
+.slk-card {
+  width: 100%;
+  max-width: 460px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 28px;
+  box-shadow: 0 12px 36px rgba(7, 28, 47, 0.08);
+}
+.slk-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 20px;
+}
+.slk-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.slk-card h1 { font-size: 20px; margin: 0 0 8px; }
+.slk-card p { line-height: 1.5; margin: 0 0 14px; }
+.slk-notes {
+  margin: 0 0 20px;
+  padding: 12px 14px 12px 28px;
+  border-radius: 10px;
+  background: var(--sunken);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.slk-notes li + li { margin-top: 6px; }
+.slk-actions { display: flex; justify-content: flex-end; margin-top: 18px; }
+.slk-done { text-align: center; padding: 12px 0; }
+.slk-ok { color: #15803d; margin-bottom: 10px; }
+.slk-wait { padding: 24px 0; text-align: center; }
+.slk-tabs { display: flex; gap: 6px; margin: 14px 0 12px; }
+.slk-tabs button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.slk-tabs button.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.slk-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px;
+}
+.slk-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.slk-list label:hover { background: var(--sunken); }
+.slk-list label.on { background: var(--accent-soft); font-weight: 550; }
+.slk-list input { margin: 0; }

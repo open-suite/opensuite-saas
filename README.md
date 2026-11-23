@@ -51,7 +51,7 @@ at that distance, 47 KB). Memory in use for the whole suite: about 500 MB.
 
 | Path | What |
 | --- | --- |
-| `server/` | Go backend. `main.go` routes, `auth.go`, `admin.go`, `docs.go` (sync hub), `versions.go` (history), `files.go` (drive), `search.go` (index), `mail.go`, `calendar.go`, `chat.go`, `meet.go`, `tls.go` (ACME), `web.go`, `convert.go` (pandoc). |
+| `server/` | Go backend. `main.go` routes, `auth.go`, `admin.go`, `docs.go` (sync hub), `versions.go` (history), `files.go` (drive), `search.go` (index), `mail.go`, `calendar.go`, `chat.go`, `slack.go` (optional Slack channel bridge), `meet.go`, `tls.go` (ACME), `web.go`, `convert.go` (pandoc). |
 | `web/` | Preact app. `src/lib/` data layers (`store`, `api`, `sync`, `mail`, `calendar`, `contacts`, `files`, `search`, `matrix`), `src/apps/` screens, `src/sw.js` offline shell. |
 | `deploy/` | `deploy.sh` (build and ship), `install.sh` (server side, idempotent), nginx and systemd files, `coexist-k3s.sh` (shared demo box only). |
 | `dev/` | `mail.sh` (a loopback mail engine), `run.sh` (build and run a checkout locally). |
@@ -86,7 +86,13 @@ first run, and starts everything. Re-running it is the release process; a
 service restarts only if its binary or configuration changed. Optional
 settings pass through the environment: `OS_SIGNUP` (`open`, `code`, `closed`),
 `OS_SIGNUP_CODE`, `OS_OPERATORS` (sign-in addresses of platform operators),
-`OS_MAIL_RELAY` (`host:port:user:password` for an outbound smarthost).
+`OS_MAIL_RELAY` (`host:port:user:password` for an outbound smarthost), and
+`OS_SLACK_CLIENT_ID` / `OS_SLACK_CLIENT_SECRET` / `OS_SLACK_SIGNING_SECRET`
+(to enable optional external Slack channel bridging). When Slack bridging is
+enabled, run `opensuite slack-manifest` on the server and register the YAML
+with Tuwunel (`!admin appservices register`), and configure your Slack App
+with redirect URL `https://<domain>/api/slack/oauth/callback` and Events API
+request URL `https://<domain>/api/slack/events`.
 
 For mail to be accepted by other providers, publish for the mail domain: an
 MX record to the server, SPF, the DKIM keys the mail engine generated (shown

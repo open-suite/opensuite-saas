@@ -329,6 +329,7 @@ func (s *Server) boot(u *User) map[string]any {
 		"userId": s.mxid(u.MxLocal),
 		"token":  u.MxToken,
 		"server": s.cfg.MatrixName,
+		"slack":  s.slackEnabled(),
 	}
 	base["mail"] = map[string]any{"ready": u.MailReady, "address": u.Email, "accountId": u.MailID}
 	return base
