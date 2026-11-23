@@ -312,7 +312,7 @@ function TimeGrid({ days, occs }) {
                     <div class="sub">{hhmm(day + slot.from * MIN)} – {hhmm(day + slot.to * MIN)}</div>
                   </div>
                 )}
-                {nowDay === i && <div class="now" style={{ top: nowTop }} />}
+                {nowDay === i && <div class="tg-now" style={{ top: nowTop }} />}
               </div>
             ))}
           </div>

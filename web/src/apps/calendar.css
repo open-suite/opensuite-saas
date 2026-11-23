@@ -89,8 +89,8 @@
 .tg-ev.ghost { z-index: 5; box-shadow: var(--shadow-2); pointer-events: none; opacity: 0.92; }
 .tg-ev.ghost.fresh { background: color-mix(in srgb, var(--accent) 80%, transparent); }
 .tg-ev:focus-visible { outline: 2px solid var(--ink); }
-.now { position: absolute; left: -1px; right: 0; height: 2px; background: var(--brand); z-index: 4; pointer-events: none; }
-.now::before { content: ""; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--brand); }
+.tg-now { position: absolute; left: -1px; right: 0; height: 2px; background: var(--brand); z-index: 4; pointer-events: none; }
+.tg-now::before { content: ""; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--brand); }
 
 /* month */
 .mo { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -162,8 +162,8 @@
 .zone { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); min-width: 0; }
 .zone .select { height: 30px; width: auto; max-width: 240px; border-color: transparent; background: var(--sunken); padding: 0 6px; }
 .days { display: inline-flex; gap: 4px; }
-.day { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--bg); font-size: 11.5px; font-weight: 650; padding: 0; }
-.day.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.wday { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--bg); font-size: 11.5px; font-weight: 650; padding: 0; }
+.wday.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .guest-field { display: flex; flex-wrap: wrap; gap: 6px; padding: 5px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius); min-height: 36px; align-items: center; }
 .guest-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
 .gchip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 3px; border-radius: 13px; background: var(--sunken); max-width: 100%; font-size: 13px; min-width: 0; }

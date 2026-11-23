@@ -485,7 +485,7 @@ function Progress({ item }) {
 
 function Pick({ picked, onPick, name }) {
   return (
-    <span class={cx('pick', picked && 'on')} role="checkbox" aria-checked={picked} aria-label={'Select ' + name} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPick() }}>
+    <span class={cx('fpick', picked && 'on')} role="checkbox" aria-checked={picked} aria-label={'Select ' + name} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPick() }}>
       {picked && <Check size={13} strokeWidth={3} />}
     </span>
   )

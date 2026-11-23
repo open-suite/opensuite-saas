@@ -45,10 +45,10 @@ button.drive-th:not(:disabled):hover, .drive-th.on { color: var(--ink); }
 .drive-row .name, .ftile .name { font-weight: 550; }
 .drive-row.picked, .ftile.picked, .list-row.picked { background: var(--accent-soft); }
 .drive-row.drop, .ftile.drop, .drive-place.drop, .crumbs a.drop { background: var(--accent-soft); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.pick { width: 18px; height: 18px; flex: none; border-radius: 5px; border: 1.5px solid var(--line-strong); background: var(--bg); display: grid; place-items: center; color: var(--accent-ink); opacity: 0; cursor: pointer; }
-.pick.on { background: var(--accent); border-color: var(--accent); opacity: 1; }
-.drive-row:hover .pick, .drive-row:focus-visible .pick, .selecting .pick, .ftile:hover .pick, .ftile:focus-visible .pick { opacity: 1; }
-@media (hover: none) { .pick { opacity: 1; } }
+.fpick { width: 18px; height: 18px; flex: none; border-radius: 5px; border: 1.5px solid var(--line-strong); background: var(--bg); display: grid; place-items: center; color: var(--accent-ink); opacity: 0; cursor: pointer; }
+.fpick.on { background: var(--accent); border-color: var(--accent); opacity: 1; }
+.drive-row:hover .fpick, .drive-row:focus-visible .fpick, .selecting .fpick, .ftile:hover .fpick, .ftile:focus-visible .fpick { opacity: 1; }
+@media (hover: none) { .fpick { opacity: 1; } }
 
 .kind-folder { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 .kind-file { background: color-mix(in srgb, var(--muted) 15%, transparent); color: var(--ink-2); }
@@ -74,7 +74,7 @@ button.drive-th:not(:disabled):hover, .drive-th.on { color: var(--ink); }
 .ftile-art { position: relative; height: 118px; display: grid; place-items: center; background: var(--canvas); border-bottom: 1px solid var(--line); }
 .ftile-art img { width: 100%; height: 100%; object-fit: cover; }
 .ftile-art .kind-icon { width: 56px; height: 56px; border-radius: 13px; }
-.ftile-art .pick { position: absolute; top: 9px; left: 9px; }
+.ftile-art .fpick { position: absolute; top: 9px; left: 9px; }
 .ftile-foot { display: flex; align-items: center; gap: 4px; padding: 8px 4px 8px 11px; min-width: 0; }
 .ftile-foot .name, .ftile-foot .sub { display: block; }
 .ftile-foot .sub { color: var(--muted); font-size: 12px; }

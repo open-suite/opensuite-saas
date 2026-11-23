@@ -484,7 +484,7 @@ export function EventEditor() {
                   </select>
                   {f.freq === 'weekly' && (
                     <span class="days">{['mo', 'tu', 'we', 'th', 'fr', 'sa', 'su'].map((dd) => (
-                      <button type="button" key={dd} class={cx('day', f.days.includes(dd) && 'on')} aria-pressed={f.days.includes(dd)} onClick={() => set({ days: f.days.includes(dd) ? f.days.filter((x) => x !== dd) : [...f.days, dd] })}>{WD[DAYS.indexOf(dd)].slice(0, 2)}</button>
+                      <button type="button" key={dd} class={cx('wday', f.days.includes(dd) && 'on')} aria-pressed={f.days.includes(dd)} onClick={() => set({ days: f.days.includes(dd) ? f.days.filter((x) => x !== dd) : [...f.days, dd] })}>{WD[DAYS.indexOf(dd)].slice(0, 2)}</button>
                     ))}</span>
                   )}
                 </div>
