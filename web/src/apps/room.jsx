@@ -1,9 +1,11 @@
 // The call screen. Members and guests use the same view; a guest only types
 // a name first. Media goes through the suite's own video engine.
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { Room, RoomEvent, Track, createLocalTracks } from 'livekit-client'
-import { Mic, MicOff, Video, VideoOff, MonitorUp, PhoneOff, Link2, Users } from 'lucide-preact'
+import { Room, RoomEvent, Track, createLocalTracks, createLocalVideoTrack } from 'livekit-client'
+import { Mic, MicOff, Video, VideoOff, MonitorUp, PhoneOff, Link2, Users, Sparkles } from 'lucide-preact'
 import './meet.css'
+import * as backdrop from '../lib/backdrop.js'
+import { BackdropTiles } from './backdrop.jsx'
 import { user, toast } from '../lib/store.js'
 import { navigate } from '../lib/router.js'
 import { get, post } from '../lib/api.js'
@@ -44,6 +46,17 @@ export default function RoomView({ code }) {
   const [preview, setPreview] = useState({ audio: null, video: null })
   const [, bump] = useState(0)
   const [note, setNote] = useState('')
+  const [fx, setFx] = useState(false) // the background chooser is open
+  const fxPanel = useRef()
+  useEffect(() => {
+    if (!fx) return
+    const away = (e) => {
+      if (e.type === 'keydown' ? e.key === 'Escape' : !fxPanel.current?.contains(e.target) && !e.target.closest('[aria-label="Background"]')) setFx(false)
+    }
+    addEventListener('pointerdown', away)
+    addEventListener('keydown', away)
+    return () => { removeEventListener('pointerdown', away); removeEventListener('keydown', away) }
+  }, [fx])
   const room = useRef(null)
   // Remote audio plays from elements kept outside the rendered tree, so it
   // survives every re-layout of the call screen.
@@ -78,7 +91,9 @@ export default function RoomView({ code }) {
     createLocalTracks({ audio: true, video: { resolution: { width: 1280, height: 720 } } })
       .then((list) => {
         if (!live) return list.forEach((t) => t.stop())
-        setPreview({ audio: list.find((t) => t.kind === 'audio') || null, video: list.find((t) => t.kind === 'video') || null })
+        const video = list.find((t) => t.kind === 'video') || null
+        backdrop.apply(video) // the background chosen last time, before anyone sees the room
+        setPreview({ audio: list.find((t) => t.kind === 'audio') || null, video })
       })
       .catch(() => {
         if (!live) return
@@ -114,6 +129,10 @@ export default function RoomView({ code }) {
       r.on(RoomEvent.TrackUnsubscribed, (track) => {
         if (track.kind === Track.Kind.Audio) track.detach().forEach((el) => el.remove())
       })
+      // A camera first turned on during the call gets the chosen background too.
+      r.on(RoomEvent.LocalTrackPublished, (pub) => {
+        if (pub.source === Track.Source.Camera) backdrop.apply(pub.track)
+      })
       r.on(RoomEvent.Reconnecting, () => setNote('Reconnecting…'))
       r.on(RoomEvent.Reconnected, () => setNote(''))
       r.on(RoomEvent.Disconnected, () => setPhase((p) => (p === 'joined' ? 'left' : p)))
@@ -125,6 +144,7 @@ export default function RoomView({ code }) {
         if (!mic) await a.mute()
       }
       if (v) {
+        await backdrop.settled(v) // never the real room while a chosen background is still starting
         await r.localParticipant.publishTrack(v)
         if (!cam) await v.mute()
       }
@@ -145,8 +165,20 @@ export default function RoomView({ code }) {
   const toggleCam = async () => {
     const on = !cam
     setCam(on)
-    if (phase === 'joined') await room.current.localParticipant.setCameraEnabled(on).catch(() => setCam(!on))
-    else if (preview.video) on ? preview.video.unmute() : preview.video.mute()
+    if (phase === 'joined') {
+      const lp = room.current.localParticipant
+      try {
+        if (on && !lp.getTrackPublication(Track.Source.Camera) && backdrop.choice.value.kind !== 'none') {
+          // A camera first turned on during the call: put the chosen
+          // background on it before anyone receives a frame.
+          const v = await createLocalVideoTrack({ resolution: { width: 1280, height: 720 } })
+          await backdrop.apply(v)
+          await lp.publishTrack(v)
+        } else await lp.setCameraEnabled(on)
+      } catch {
+        setCam(!on)
+      }
+    } else if (preview.video) on ? preview.video.unmute() : preview.video.mute()
   }
   const toggleShare = async () => {
     const lp = room.current.localParticipant
@@ -199,6 +231,12 @@ export default function RoomView({ code }) {
               <Button kind="primary" class="btn-lg" type="submit" busy={phase === 'joining'} disabled={!name.trim() || !info}>Join now</Button>
               <Button class="btn-lg btn-ghost" icon={Link2} onClick={copy}>Copy link</Button>
             </div>
+            {backdrop.supported && preview.video && cam && (
+              <div class="fx-lobby">
+                <span class="fx-label">Background</span>
+                <BackdropTiles track={preview.video} />
+              </div>
+            )}
           </form>
         </div>
       </div>
@@ -242,9 +280,20 @@ export default function RoomView({ code }) {
           <div class="grid" style={gridStyle(tiles.length)}>{tiles}</div>
         )}
       </div>
+      {fx && (
+        <div class="fx-panel" ref={fxPanel}>
+          <span class="fx-label">Background</span>
+          {camOf(r.localParticipant)
+            ? <BackdropTiles track={camOf(r.localParticipant)} />
+            : <p class="fx-note">Turn your camera on to choose a background.</p>}
+        </div>
+      )}
       <div class="call-bar">
         <button class={cx('cbtn', !mic && 'off')} onClick={toggleMic} aria-label={mic ? 'Mute' : 'Unmute'} title={mic ? 'Mute' : 'Unmute'}>{mic ? <Mic size={20} /> : <MicOff size={20} />}</button>
         <button class={cx('cbtn', !cam && 'off')} onClick={toggleCam} aria-label={cam ? 'Camera off' : 'Camera on'} title={cam ? 'Camera off' : 'Camera on'}>{cam ? <Video size={20} /> : <VideoOff size={20} />}</button>
+        {backdrop.supported && (
+          <button class={cx('cbtn', (fx || backdrop.choice.value.kind !== 'none') && 'on')} onClick={() => setFx(!fx)} aria-label="Background" title="Background" aria-expanded={fx}><Sparkles size={20} /></button>
+        )}
         <button class={cx('cbtn', r.localParticipant.isScreenShareEnabled && 'on')} onClick={toggleShare} aria-label="Present your screen" title="Present your screen"><MonitorUp size={20} /></button>
         <button class="cbtn" onClick={copy} aria-label="Copy invite link" title="Copy invite link"><Link2 size={20} /></button>
         <button class="cbtn leave" onClick={leave} aria-label="Leave" title="Leave"><PhoneOff size={20} /></button>

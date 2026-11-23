@@ -118,7 +118,8 @@ OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... node tests/pe
 - Chat: direct and group conversations, files and images (from the device or
   from Files), unread counts, typing notices, a one-click meeting from any
   conversation.
-- Meet: permanent room links, guests join with no account, screen sharing.
+- Meet: permanent room links, guests join with no account, screen sharing,
+  background blur and virtual backgrounds computed on the person's own device.
 - Files: folders, uploads, previews, trash, sharing with colleagues and by
   public link, a storage quota per organisation. Documents of every kind live
   in the same folders.

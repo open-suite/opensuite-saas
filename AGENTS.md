@@ -97,6 +97,21 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   workbook, so they sync, version and undo like cells. Anything that walks
   worksheets must skip the hidden ones.
 
+- **Call backgrounds** (`lib/backdrop.js`, `apps/backdrop.jsx`, added
+  2026-11-23). Blur and replacement run in the person's own browser:
+  `@livekit/track-processors` drives MediaPipe's selfie segmenter on WebGL2.
+  By default that library fetches its runtime from jsDelivr and its model
+  from Google; ours are served from `/assets/seg-<version>/` (copied there by
+  `vite.config.js`, model committed under `web/public/assets/seg/`). Keep
+  `assetPaths` set, or calls start depending on two US services. Those files
+  and `/assets/bg/` are left out of the service worker's list on purpose
+  (20 MB). The call screen waits for `settled(track)` before publishing, so
+  the real room is never sent while a chosen background is starting. No
+  WebGL2 means no chooser (`supported`). The built-in scenes are drawn by
+  `web/scripts/backgrounds.cjs`; rename the folder if they change.
+  `tests/e2e-backdrop.cjs` reads the pixels; give it `OS_PORTRAIT` to judge
+  edges on a real photo.
+
 ## Engines: facts verified on 2026-11-21
 
 - **Stalwart 1.1.1** has no TOML and no REST admin API any more. All
@@ -173,6 +188,11 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   `ev-`, `ct-`) and keep bare names for the shared kit in `style.css`.
 - The server does not list what is inside a trashed folder; the device keeps
   its copy out of sight (`refreshFiles`) so a restore shows it at once.
+- The test browser loses its GPU after running for days (everything falls
+  back to software and WebGL is off; `chrome://gpu` or a `getContext('webgl2')`
+  that returns null shows it). Backgrounds cannot be checked until it is
+  restarted: `launchctl kickstart -k gui/<uid>/co.ritza.agent-browser`, when
+  no other tabs are open in it.
 - Sign-in is limited to 10 attempts per address per 5 minutes. Running many
   checks back to back against one deployment hits it; wait, do not raise it.
 - The checks remember the colleague they created per deployment in
