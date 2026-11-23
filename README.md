@@ -142,3 +142,12 @@ other Matrix servers (off by one setting), end-to-end encrypted chat, offline
 editing of spreadsheets beyond the open session, shared calendars, comments
 on spreadsheet cells, charts in Excel files, tables in presentations, and
 version history for presentations.
+
+## Licence
+
+MIT, see `LICENSE`. Two things in the tree come from elsewhere under their
+own terms: `web/public/assets/seg/selfie_multiclass_256x256.tflite` is
+Google's MediaPipe model (Apache 2.0), and the engines the installer
+downloads (Stalwart, Tuwunel, LiveKit) keep their own licences. The call
+backgrounds in `web/public/assets/bg/` are drawn by
+`web/scripts/backgrounds.cjs` and are ours.
