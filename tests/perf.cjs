@@ -33,6 +33,7 @@ function report(label, samples, budget = BUDGET) {
 
     await page.goto(BASE + '/')
     await page.waitForSelector('.auth-card')
+    await page.waitForFunction(() => performance.getEntriesByName('os:painted').length > 0)
     const cold = await page.evaluate(() => {
       const n = performance.getEntriesByType('navigation')[0]
       return { ttfb: n.responseStart, painted: performance.getEntriesByName('os:painted')[0]?.startTime, kb: performance.getEntriesByType('resource').reduce((s, r) => s + (r.transferSize || 0), n.transferSize) / 1024 }
@@ -47,6 +48,7 @@ function report(label, samples, budget = BUDGET) {
     for (let i = 0; i < 12; i++) {
       await page.goto(BASE + ['/', '/mail', '/files', '/chat'][i % 4])
       await page.waitForSelector('.rail')
+      await page.waitForFunction(() => performance.getEntriesByName('os:painted').length > 0) // set on the frame after the first render
       loads.push(await page.evaluate(() => performance.getEntriesByName('os:painted')[0].startTime))
       await page.waitForTimeout(250)
     }

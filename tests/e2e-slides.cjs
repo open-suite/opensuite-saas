@@ -377,7 +377,15 @@ async function sibling(page, url, opened) {
     await B.goto(url)
     await B.waitForSelector('.sl-view.readonly .sl-canvas .sl-slide', { timeout: 8000 })
     if (await B.$('.sl-toolbar')) throw new Error('a viewer was given the editing toolbar')
-    const count = (await els(B)).length
+    // Over a real network the deck is still arriving when its first slide
+    // shows; count once it has stopped growing.
+    let count = -1
+    for (let i = 0; i < 20; i++) {
+      const n = (await els(B)).length
+      if (n === count) break
+      count = n
+      await B.waitForTimeout(500)
+    }
     r = await B.evaluate(() => { const q = document.querySelector('.sl-canvas .sl-box').getBoundingClientRect(); return { x: q.x + 20, y: q.y + 20 } })
     await B.mouse.click(r.x, r.y)
     await B.keyboard.type('x')
