@@ -4,13 +4,18 @@
 // card, then recomposed, before any video leaves the browser.
 //
 // The model and its runtime are served from our own origin (see
-// vite.config.js). They are 3 MB over the wire and are fetched only when
-// someone first turns a background on.
+// vite.config.js). They are about 18 MB over the wire and are fetched only
+// when someone first turns a background on, then kept by the browser.
 import { signal } from '@preact/signals'
 import { kvGet, kvSet, kvDel } from './idb.js'
 
 const SEG = __SEG__ // eslint-disable-line no-undef
 const BG = '/assets/bg/' // rename when the pictures change: /assets/ is cached for good
+// The person model. MediaPipe publishes two: a 250 KB one that answers
+// "person or not", and this 16 MB one that knows hair, skin and clothes
+// apart. The small one leaves bits of furniture attached to people and
+// breaks up hands; this one does not, and that is worth the download.
+const MODEL = '/selfie_multiclass_256x256.tflite'
 
 export const scenes = [
   { id: 'studio', name: 'Studio' },
@@ -77,8 +82,10 @@ export async function removeOwn() {
   if (choice.value.kind === 'own') choose({ kind: 'none' })
 }
 
+// The engine: our own picture pipeline (lib/matte.js) inside the stream
+// plumbing of @livekit/track-processors. Loaded only when first needed.
 let lib = null
-const engine = () => (lib ??= import('@livekit/track-processors'))
+const engine = () => (lib ??= Promise.all([import('@livekit/track-processors'), import('./matte.js')]).then(([a, b]) => ({ ProcessorWrapper: a.ProcessorWrapper, Matte: b.Matte })))
 
 // warm fetches the engine ahead of the click that needs it.
 let warmed = false
@@ -86,16 +93,17 @@ export function warm() {
   if (warmed || !supported) return
   warmed = true
   engine().catch(() => (warmed = false))
-  for (const f of ['/vision_wasm_internal.js', '/vision_wasm_internal.wasm', '/selfie_segmenter.tflite']) fetch(SEG + f).catch(() => {})
+  for (const f of ['/vision_wasm_internal.js', '/vision_wasm_internal.wasm', MODEL]) fetch(SEG + f).catch(() => {})
 }
 
+// strength is the blur's spread in camera pixels.
 async function modeFor(c) {
-  if (c.kind === 'soft') return { mode: 'background-blur', blurRadius: 6 }
-  if (c.kind === 'blur') return { mode: 'background-blur', blurRadius: 16 }
-  if (c.kind === 'scene') return { mode: 'virtual-background', imagePath: BG + c.id + '.webp' }
+  if (c.kind === 'soft') return { kind: 'blur', strength: 9 }
+  if (c.kind === 'blur') return { kind: 'blur', strength: 26 }
+  if (c.kind === 'scene') return { kind: 'image', url: BG + c.id + '.webp' }
   if (c.kind === 'own') {
     await readOwn()
-    if (own.value) return { mode: 'virtual-background', imagePath: own.value }
+    if (own.value) return { kind: 'image', url: own.value }
   }
   return null
 }
@@ -125,14 +133,20 @@ export function apply(track, c = choice.value) {
             await track.stopProcessor()
           }
         } else if (st.proc) {
-          await st.proc.switchTo(mode)
+          await st.proc.updateTransformerOptions(mode)
         } else {
-          const { BackgroundProcessor } = await engine()
-          const proc = BackgroundProcessor({
-            ...mode,
-            assetPaths: { tasksVisionFileSet: SEG, modelAssetPath: SEG + '/selfie_segmenter.tflite' },
-            onFrameProcessed: (s) => { timing.ms = s.processingTimeMs; timing.segment = s.segmentationTimeMs },
-          }, 'backdrop')
+          const { ProcessorWrapper, Matte } = await engine()
+          const proc = new ProcessorWrapper(new Matte({
+            mode,
+            runtime: SEG,
+            model: SEG + MODEL,
+            rate: track.mediaStreamTrack?.getSettings?.().frameRate,
+            onFrame: (ms, segment, light) => { timing.ms = ms; timing.segment = segment; timing.light = light },
+            // The picture can no longer be drawn (the graphics context was
+            // lost, say). Say so and switch the effect off, rather than
+            // freeze the person's video.
+            onFail: () => { failed.value = true; choose({ kind: 'none' }, track); failed.value = true },
+          }), 'backdrop')
           await track.setProcessor(proc)
           st.proc = proc
         }

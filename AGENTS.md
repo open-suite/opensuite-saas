@@ -97,15 +97,28 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   workbook, so they sync, version and undo like cells. Anything that walks
   worksheets must skip the hidden ones.
 
-- **Call backgrounds** (`lib/backdrop.js`, `apps/backdrop.jsx`, added
-  2026-11-23). Blur and replacement run in the person's own browser:
-  `@livekit/track-processors` drives MediaPipe's selfie segmenter on WebGL2.
-  By default that library fetches its runtime from jsDelivr and its model
-  from Google; ours are served from `/assets/seg-<version>/` (copied there by
-  `vite.config.js`, model committed under `web/public/assets/seg/`). Keep
-  `assetPaths` set, or calls start depending on two US services. Those files
-  and `/assets/bg/` are left out of the service worker's list on purpose
-  (20 MB). The call screen waits for `settled(track)` before publishing, so
+- **Call backgrounds** (`lib/backdrop.js`, `lib/matte.js`,
+  `apps/backdrop.jsx`, added 2026-11-23). Blur and replacement run in the
+  person's own browser on WebGL2. `@livekit/track-processors` supplies only
+  the camera-stream plumbing (`ProcessorWrapper`); the picture pipeline is
+  ours (`Matte`). Do not go back to that library's own `BackgroundProcessor`:
+  it takes the model's yes/no mask at 256 pixels and stretches it, which
+  gives stepped outlines, and it was tried and rejected twice (here, and in
+  the earlier k3s suite). What makes ours smooth, in order of effect: the
+  model's soft confidence instead of its category; a joint bilateral filter
+  that moves the mask's edge onto real edges in the camera frame; steadying
+  against the previous frame; a blur that ignores the person. The model is
+  MediaPipe's `selfie_multiclass_256x256` (16 MB): the 250 KB
+  `selfie_segmenter` leaves furniture attached to people and breaks hands.
+  Judge any change at 3x zoom on a real photo or video, never on a
+  thumbnail. The model draws into the same WebGL context, so `draw()` sets
+  all the state it needs every frame. A graphics card that cannot keep up
+  drops to asking the model every other frame (`light`).
+  The runtime and model are served from `/assets/seg-<version>/` (copied by
+  `vite.config.js`, model committed under `web/public/assets/seg/`), never
+  from the CDNs MediaPipe defaults to. Those files and `/assets/bg/` are
+  left out of the service worker's list on purpose (40 MB on disk, 18 MB
+  fetched). The call screen waits for `settled(track)` before publishing, so
   the real room is never sent while a chosen background is starting. No
   WebGL2 means no chooser (`supported`). The built-in scenes are drawn by
   `web/scripts/backgrounds.cjs`; rename the folder if they change.

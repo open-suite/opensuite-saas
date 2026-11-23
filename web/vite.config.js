@@ -10,7 +10,7 @@ import { join } from 'node:path'
 // /assets/ is cached for good.
 const segVersion = JSON.parse(readFileSync(join(import.meta.dirname, 'node_modules/@mediapipe/tasks-vision/package.json'), 'utf8')).version
 const SEG = `/assets/seg-${segVersion}`
-// Kept on the server until someone turns a background on: 20 MB that most
+// Kept on the server until someone turns a background on: 40 MB that most
 // visits never need. Everything else in /assets/ is stored on the device.
 const onDemand = (f) => f.startsWith(SEG + '/') || f.startsWith('/assets/bg/')
 
@@ -26,7 +26,7 @@ function offlineShell() {
       mkdirSync(join(dist, SEG), { recursive: true })
       const wasm = join(import.meta.dirname, 'node_modules/@mediapipe/tasks-vision/wasm')
       for (const name of readdirSync(wasm)) copyFileSync(join(wasm, name), join(dist, SEG, name))
-      renameSync(join(dist, 'assets/seg/selfie_segmenter.tflite'), join(dist, SEG, 'selfie_segmenter.tflite'))
+      for (const name of readdirSync(join(dist, 'assets/seg'))) renameSync(join(dist, 'assets/seg', name), join(dist, SEG, name))
       const files = []
       const walk = (dir, rel) => {
         for (const name of readdirSync(dir)) {
