@@ -167,6 +167,12 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   second, so effects run late: a check must not assume a shortcut is
   listening or an effect has run the instant a selector appears, and a
   screen must not rely on an effect for its first frame.
+- Every stylesheet ends up loaded in the same page, so a bare class is
+  global. Three screens built separately each styled `.day`, `.pick` or
+  `.now` and broke one another. Prefix a screen's classes (`tg-`, `sl-`,
+  `ev-`, `ct-`) and keep bare names for the shared kit in `style.css`.
+- The server does not list what is inside a trashed folder; the device keeps
+  its copy out of sight (`refreshFiles`) so a restore shows it at once.
 - Sign-in is limited to 10 attempts per address per 5 minutes. Running many
   checks back to back against one deployment hits it; wait, do not raise it.
 - The checks remember the colleague they created per deployment in
