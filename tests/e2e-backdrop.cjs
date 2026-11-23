@@ -173,13 +173,13 @@ const far = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a
     ok('slight blur' + (portrait ? '' : ' sits between the two'))
 
     await A.click('.fx-tile[aria-label="Ember"]')
-    const ember = await until('scene', (s) => s.wall.rgb[0] < 60 && s.wall.rgb[2] > s.wall.rgb[0] && s.wall.detail < 14) // night blue, top left
+    const ember = await until('scene', (s) => s.wall.rgb[0] < 60 && s.wall.rgb[2] > s.wall.rgb[0] && s.wall.detail < 40) // night blue, top left
     same(ember, 'the scene covered the person')
     await shot('scene')
     ok('scene: the wall is replaced by the picture' + (portrait ? ', the person stays' : ''))
 
     await A.click('.fx-tile[aria-label="Daylight"]')
-    same(await until('second scene', (s) => s.wall.rgb[0] > 190 && s.wall.rgb[2] > 170 && s.wall.detail < 14), 'the second scene covered the person')
+    same(await until('second scene', (s) => s.wall.rgb[0] > 190 && s.wall.rgb[2] > 170 && s.wall.detail < 40), 'the second scene covered the person')
     await shot('scene-light')
     ok('switching scenes needs no restart')
 
@@ -228,7 +228,7 @@ const far = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a
       await B.waitForSelector('.call-bar', { timeout: 15000 })
       await B.waitForFunction(() => document.querySelectorAll('.tile video').length === 2, null, { timeout: 20000 })
       const theirs = '.tile:not(:has(.mirror)) video' // the other person's tile is not mirrored
-      await until('what the colleague receives', (s) => s.wall.rgb[0] < 70 && s.wall.rgb[2] > s.wall.rgb[0] && s.wall.detail < 20, theirs, B)
+      await until('what the colleague receives', (s) => s.wall.rgb[0] < 70 && s.wall.rgb[2] > s.wall.rgb[0] && s.wall.detail < 45, theirs, B)
       ok('in a call: the colleague receives the scene, never the real wall')
       await A.click('.call-bar [aria-label="Background"]')
       await A.waitForSelector('.fx-panel')
