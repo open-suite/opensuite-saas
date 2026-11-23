@@ -55,8 +55,15 @@ export function refreshFiles({ withDocs = false } = {}) {
       }
       if (writes.inflight === 0 && writes.at < started) {
         const pending = nodes.value.filter((n) => n.uploading)
+        // The server does not list what is inside a trashed folder. Keep this
+        // device's copy of it, out of sight, so a restore shows it at once.
+        const listed = new Set(fresh.nodes.map((n) => n.id))
+        const trashed = new Set(fresh.nodes.filter((n) => n.trashed).map((n) => n.id))
+        const before = nodeById.value
+        const inTrash = (n) => { for (let p = n.parent, guard = 0; p && guard < 40; p = before[p]?.parent, guard++) if (trashed.has(p)) return true; return false }
+        const kept = nodes.value.filter((n) => !n.uploading && !listed.has(n.id) && inTrash(n))
         storage.value = { usage: fresh.usage, quota: fresh.quota, maxFile: fresh.maxFile }
-        setNodes([...pending, ...fresh.nodes.filter((n) => !pending.find((p) => p.id === n.id))])
+        setNodes([...pending, ...fresh.nodes.filter((n) => !pending.find((p) => p.id === n.id)), ...kept])
         filesLoaded.value = true
         return
       }
@@ -199,7 +206,13 @@ const stamp = (on) => (on ? now() : 0)
 // The same verbs for folders, files and documents.
 export const renameItem = (i, name) => (i.type === 'doc' ? renameDoc(i.ref, name) : patchNode(i.ref, { name, updated: now() }, { name }))
 export const moveItem = (i, parent) => (i.type === 'doc' ? moveDoc(i.ref, parent) : patchNode(i.ref, { parent }))
-export const trashItem = (i, on = true) => (i.type === 'doc' ? trashDoc(i.ref, on) : patchNode(i.ref, { trashed: stamp(on) }, { trashed: on }))
+export function trashItem(i, on = true) {
+  if (i.type === 'doc') return trashDoc(i.ref, on)
+  const done = patchNode(i.ref, { trashed: stamp(on) }, { trashed: on })
+  // The server stops listing what is inside a trashed folder, so a copy
+  // refreshed while it was there has lost the contents: ask for them again.
+  return i.type === 'folder' && !on ? done.then((fresh) => { refreshFiles({ withDocs: true }); return fresh }) : done
+}
 export const shareItem = (i, change) => (i.type === 'doc' ? shareDoc(i.ref, change) : patchNode(i.ref, change))
 
 export function deleteItem(i) {
