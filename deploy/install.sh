@@ -16,6 +16,8 @@ ACME_EMAIL=${2:?usage: install.sh <domain> <acme-email> [mail-domain]}
 MAIL_DOMAIN=${3:-$DOMAIN}
 # "file:/path" reads the address from a file on the server.
 case "$ACME_EMAIL" in file:*) ACME_EMAIL=$(cat "${ACME_EMAIL#file:}") ;; esac
+# The relay carries a password, so it can also live in a file on the server.
+case "${OS_MAIL_RELAY:-}" in file:*) OS_MAIL_RELAY=$(cat "${OS_MAIL_RELAY#file:}") ;; esac
 
 TUWUNEL_VERSION=v2.0.0
 STALWART_VERSION=v1.1.1
@@ -256,6 +258,9 @@ if [ ! -f /etc/stalwart/.configured ]; then
   iptables -D INPUT -p tcp --dport 8080 ! -i lo -j DROP
 else
   ensure opensuite-mail $mail
+  # Re-apply the default domain and relay, which may have changed.
+  for _ in $(seq 1 30); do curl -fs -o /dev/null http://127.0.0.1:8446/ && break; sleep 1; done
+  (set -a; . "$ETC/opensuite.env"; . "$ETC/secrets.env"; set +a; "$OPT/bin/opensuite" mail-setup http://127.0.0.1:8446)
 fi
 ensure opensuite $app
 

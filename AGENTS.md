@@ -158,16 +158,22 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   working). k3s captures ports 80/443, so `deploy/coexist-k3s.sh` adds a
   Traefik TCP passthrough (kube-system objects named `opensuite-native`) to
   nginx on `10.42.0.1:9443/9080`. On a dedicated server none of that exists.
-- Deploy: `OS_OPERATORS=ada@office.demo.opensuite.online OS_SIGNUP=code OS_SIGNUP_CODE=<code> deploy/deploy.sh root@95.217.109.206 office.demo.opensuite.online file:/etc/opensuite/acme-email`
+- Deploy: `OS_OPERATORS=ada@demo.opensuite.online OS_SIGNUP=code OS_SIGNUP_CODE=<code> OS_MAIL_RELAY=file:/etc/opensuite/mail-relay deploy/deploy.sh root@95.217.109.206 office.demo.opensuite.online file:/etc/opensuite/acme-email demo.opensuite.online`
   The settings are rewritten on every deploy, so pass all of them each time
   (the current code is in `/etc/opensuite/opensuite.env` on the box).
-- Sign-up there is by invitation code on purpose: the box can deliver mail
-  directly, and open sign-up would let anyone send from its address. Do not
-  open it before outbound limits and abuse handling exist.
+- Mail there is `@demo.opensuite.online` (the old stack's domain, whose MX,
+  SPF, DKIM and DMARC already exist for Brevo). Outbound goes through Brevo
+  (free plan, about 300 a day) with the login in `/etc/opensuite/mail-relay`,
+  copied from the old stack's `mb-messages/messages-mta-out-relay` secret.
+  Inbound port 25 reaches this engine because the old stack's
+  `messages-mta-in` and `messages-mta-out` are scaled to 0; a helmfile
+  re-apply of the old stack scales them back up and takes port 25 again.
+- Sign-up there is by invitation code on purpose: open sign-up would let
+  anyone send from the demo domain. Do not open it before outbound limits and
+  abuse handling exist.
 - Test accounts: `ada` (owner and operator) and `grace.hopper`; passwords are
-  in the handover notes, not in the repo.
-- Port 25 over IPv4 on that box still belongs to the old stack's mail pod, and
-  the test domain has no MX/SPF/DKIM/PTR, so mail there is internal only.
+  in the handover notes, not in the repo. `opensuite move-address <old> <new>`
+  moved them from `@office.demo.opensuite.online`.
 - The production name `office.opensuite.online` has no DNS record yet (DNS is
   at Namecheap; no API access from here).
 

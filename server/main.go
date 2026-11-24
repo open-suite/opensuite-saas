@@ -134,6 +134,18 @@ func main() {
 		return
 	}
 
+	// "opensuite move-address <old> <new>" gives a person a new address,
+	// keeping their mailbox, documents, files and chats.
+	if len(os.Args) == 4 && os.Args[1] == "move-address" {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if err := s.moveAddress(ctx, os.Args[2], os.Args[3]); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("%s is now %s", os.Args[2], os.Args[3])
+		return
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           s.routes(),

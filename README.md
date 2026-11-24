@@ -86,7 +86,8 @@ first run, and starts everything. Re-running it is the release process; a
 service restarts only if its binary or configuration changed. Optional
 settings pass through the environment: `OS_SIGNUP` (`open`, `code`, `closed`),
 `OS_SIGNUP_CODE`, `OS_OPERATORS` (sign-in addresses of platform operators),
-`OS_MAIL_RELAY` (`host:port:user:password` for an outbound smarthost).
+`OS_MAIL_RELAY` (`host:port:user:password` for an outbound smarthost, or
+`file:/path` to read it from a file on the server).
 
 For mail to be accepted by other providers, publish for the mail domain: an
 MX record to the server, SPF, the DKIM keys the mail engine generated (shown

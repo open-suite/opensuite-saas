@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -86,6 +87,7 @@ type setResult struct {
 			ID string `json:"id"`
 		} `json:"objectId"`
 	} `json:"notCreated"`
+	Updated      map[string]json.RawMessage `json:"updated"`
 	NotUpdated   map[string]json.RawMessage `json:"notUpdated"`
 	NotDestroyed map[string]json.RawMessage `json:"notDestroyed"`
 }
@@ -191,25 +193,45 @@ func (s *Server) mailRelay(ctx context.Context, base string) error {
 	if len(p) != 4 {
 		return errf("OS_MAIL_RELAY must be host:port:user:password")
 	}
-	res, err := s.jmapAdmin(ctx, base, jmapCall{"x:MtaRoute/query", map[string]any{}})
+	// The engine has built-in routes ("mx", "local"); ours is the one named
+	// "smarthost", created once and updated when the setting changes.
+	res, err := s.jmapAdmin(ctx, base, jmapCall{"x:MtaRoute/get", map[string]any{"properties": []string{"name"}}})
 	if err != nil {
 		return err
 	}
-	var q queryResult
-	json.Unmarshal(res[0].Args, &q)
-	if len(q.IDs) > 0 {
-		return nil
+	var g struct {
+		List []struct{ ID, Name string } `json:"list"`
 	}
+	json.Unmarshal(res[0].Args, &g)
 	port := 587
 	json.Unmarshal([]byte(p[1]), &port)
-	_, err = s.jmapAdmin(ctx, base,
-		jmapCall{"x:MtaRoute/set", map[string]any{"create": map[string]any{"r": map[string]any{
-			"@type": "Relay", "name": "smarthost", "host": p[0], "port": port, "protocol": "smtp", "implicitTls": port == 465,
-			"authUsername": p[2], "authSecret": map[string]string{"@type": "Value", "secret": p[3]}}}}},
+	route := map[string]any{
+		"host": p[0], "port": port, "protocol": "smtp", "implicitTls": port == 465,
+		"authUsername": p[2], "authSecret": map[string]string{"@type": "Value", "secret": p[3]}}
+	set := map[string]any{"update": map[string]any{}}
+	for _, r := range g.List {
+		if r.Name == "smarthost" {
+			set["update"] = map[string]any{r.ID: route}
+		}
+	}
+	if len(set["update"].(map[string]any)) == 0 {
+		route["@type"], route["name"] = "Relay", "smarthost"
+		set = map[string]any{"create": map[string]any{"r": route}}
+	}
+	res, err = s.jmapAdmin(ctx, base,
+		jmapCall{"x:MtaRoute/set", set},
 		jmapCall{"x:MtaOutboundStrategy/set", map[string]any{"update": map[string]any{"singleton": map[string]any{"route": map[string]any{
 			"match": map[string]any{"0": map[string]string{"if": "is_local_domain(rcpt_domain)", "then": "'local'"}}, "else": "'smarthost'"}}}}},
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	var sr setResult
+	json.Unmarshal(res[0].Args, &sr)
+	if len(sr.NotCreated) > 0 || len(sr.NotUpdated) > 0 {
+		return errf("mail engine refused the relay: %s", res[0].Args)
+	}
+	return nil
 }
 
 // mailSyncCert points the engine at the certificate the app obtained for the
@@ -274,6 +296,46 @@ func (s *Server) mailEnsureAccount(ctx context.Context, u *User) {
 	}
 	u.MailReady, u.MailID = true, id
 	s.w.Exec(`UPDATE users SET mail_ready = 1, mail_id = ? WHERE id = ?`, id, u.ID)
+}
+
+// moveAddress changes a person's address. The mailbox moves with them (the
+// engine keeps its contents and re-derives the sending identity); everything
+// else in the app refers to people by id.
+func (s *Server) moveAddress(ctx context.Context, from, to string) error {
+	from, to = strings.ToLower(strings.TrimSpace(from)), strings.ToLower(strings.TrimSpace(to))
+	var id string
+	if s.r.QueryRow(`SELECT id FROM users WHERE email = ?`, from).Scan(&id) != nil {
+		return errf("no one has the address %s", from)
+	}
+	u := s.userByID(id)
+	local, domain, _ := strings.Cut(to, "@")
+	if validUsername(local) != "" || !domainRe.MatchString(domain) {
+		return errf("%s is not a valid address", to)
+	}
+	if s.addressTaken(to) {
+		return errf("%s is already taken", to)
+	}
+	if !slices.Contains(s.mailDomainsFor(u.OrgID), domain) {
+		return errf("%s is not a mail domain of this organisation", domain)
+	}
+	if s.cfg.MailURL != "" && u.MailID != "" {
+		domID, err := s.mailDomainID(ctx, s.cfg.MailURL, domain, true)
+		if err != nil {
+			return err
+		}
+		res, err := s.jmapAdmin(ctx, s.cfg.MailURL, jmapCall{"x:Account/set", map[string]any{"update": map[string]any{
+			u.MailID: map[string]any{"name": local, "domainId": domID}}}})
+		if err != nil {
+			return err
+		}
+		var sr setResult
+		json.Unmarshal(res[0].Args, &sr)
+		if _, moved := sr.Updated[u.MailID]; !moved {
+			return errf("mail engine refused the move: %s", res[0].Args)
+		}
+	}
+	_, err := s.w.Exec(`UPDATE users SET email = ? WHERE id = ?`, to, id)
+	return err
 }
 
 func (s *Server) mailDeleteAccount(u *User) {
