@@ -231,7 +231,10 @@ func (s *Server) mailRelay(ctx context.Context, base string) error {
 	if len(sr.NotCreated) > 0 || len(sr.NotUpdated) > 0 {
 		return errf("mail engine refused the relay: %s", res[0].Args)
 	}
-	return nil
+	// Outbound routing is read at startup; without a reload the engine keeps
+	// delivering directly.
+	_, err = s.jmapAdmin(ctx, base, jmapCall{"x:Action/set", map[string]any{"create": map[string]any{"a": map[string]string{"@type": "ReloadSettings"}}}})
+	return err
 }
 
 // mailSyncCert points the engine at the certificate the app obtained for the
