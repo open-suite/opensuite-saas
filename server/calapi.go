@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/mail"
-	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -648,9 +647,9 @@ func (s *Server) sendCalendarMail(w http.ResponseWriter, r *http.Request, u *Use
 			fail(w, 500, "The invitation couldn't be written.")
 			return false
 		}
-		blob, code, msg := s.mailUpload(r, u, "message/rfc822", raw)
-		if code != 0 {
-			fail(w, code, msg)
+		blob, err := s.mailUpload(r.Context(), u, raw)
+		if err != nil {
+			fail(w, 502, "The mail service refused the invitation.")
 			return false
 		}
 		rcpt := []map[string]string{}
@@ -694,28 +693,6 @@ func zoneOf(evs ...event) string {
 		}
 	}
 	return "UTC"
-}
-
-// mailUpload stores bytes in the member's mailbox and returns the blob id.
-func (s *Server) mailUpload(r *http.Request, u *User, ctype string, data []byte) (string, int, string) {
-	req, err := http.NewRequestWithContext(r.Context(), "POST", s.cfg.MailURL+"/jmap/upload/"+url.PathEscape(u.MailID)+"/", strings.NewReader(string(data)))
-	if err != nil {
-		return "", 500, "mail error"
-	}
-	req.SetBasicAuth(u.Email, u.MailSecret)
-	req.Header.Set("Content-Type", ctype)
-	res, err := mailClient.Do(req)
-	if err != nil {
-		return "", 502, "The mail service is not responding."
-	}
-	defer res.Body.Close()
-	var up struct {
-		BlobID string `json:"blobId"`
-	}
-	if res.StatusCode >= 300 || json.NewDecoder(res.Body).Decode(&up) != nil || up.BlobID == "" {
-		return "", 502, "The mail service refused the invitation."
-	}
-	return up.BlobID, 0, ""
 }
 
 func (s *Server) handleEventCreate(w http.ResponseWriter, r *http.Request, u *User) {

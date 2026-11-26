@@ -3,7 +3,8 @@
 #
 #   install.sh <domain> <acme-email> [mail-domain]
 #
-# Idempotent. Installs nginx, the three headless engines (Tuwunel for chat,
+# Idempotent. Installs nginx, pandoc, Node (for the content engine, which the
+# app starts on demand like pandoc), the three headless engines (Tuwunel for chat,
 # Stalwart for mail, LiveKit for video) as plain systemd services bound to
 # loopback, and the app binary and web build that deploy.sh shipped alongside
 # this script. No containers, no cluster. A service is restarted only when its
@@ -18,13 +19,17 @@ MAIL_DOMAIN=${3:-$DOMAIN}
 case "$ACME_EMAIL" in file:*) ACME_EMAIL=$(cat "${ACME_EMAIL#file:}") ;; esac
 # The relay carries a password, so it can also live in a file on the server.
 case "${OS_MAIL_RELAY:-}" in file:*) OS_MAIL_RELAY=$(cat "${OS_MAIL_RELAY#file:}") ;; esac
+# So do the demo organisation's passwords (<org id>,<login>:<password>,...).
+case "${OS_DEMO:-}" in file:*) OS_DEMO=$(cat "${OS_DEMO#file:}") ;; esac
 
 TUWUNEL_VERSION=v2.0.0
 STALWART_VERSION=v1.1.1
 LIVEKIT_VERSION=1.13.11
+# The content engine (the app's own document code, run on demand by the API).
+NODE_VERSION=24.21.0
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-BUNDLE=$(dirname "$HERE") # deploy.sh ships: opensuite (binary), web/, deploy/
+BUNDLE=$(dirname "$HERE") # deploy.sh ships: opensuite (binary), web/, dist-headless/, deploy/
 ETC=/etc/opensuite
 OPT=/opt/opensuite
 DATA=/var/lib/opensuite
@@ -101,6 +106,7 @@ OS_MAIL_HOST=$DOMAIN
 OS_LISTEN=127.0.0.1:8600
 OS_DATA=$DATA
 OS_WEB=$OPT/web
+OS_NODE=$OPT/node/bin/node
 OS_PUBLIC_IPS=$PUBLIC_IP${PUBLIC_IP6:+,$PUBLIC_IP6}
 OS_ACME_EMAIL=$ACME_EMAIL
 OS_MATRIX_URL=http://127.0.0.1:8008
@@ -110,6 +116,7 @@ OS_MAIL_RELAY=${OS_MAIL_RELAY:-}
 OS_SIGNUP=${OS_SIGNUP:-open}
 OS_SIGNUP_CODE=${OS_SIGNUP_CODE:-}
 OS_OPERATORS=${OS_OPERATORS:-}
+OS_DEMO=${OS_DEMO:-}
 EOF
 
 say "chat engine (Tuwunel $TUWUNEL_VERSION)"
@@ -229,9 +236,28 @@ STALWART_PUBLIC_URL=https://$DOMAIN
 EOF
 put /etc/systemd/system/opensuite-mail.service 644 root:root < "$HERE/systemd/opensuite-mail.service" && mail=1
 
+say "content engine runtime (Node $NODE_VERSION)"
+if [ "$("$OPT/node/bin/node" --version 2>/dev/null)" != "v$NODE_VERSION" ]; then
+  tarball="node-v$NODE_VERSION-linux-x64.tar.xz"
+  curl -fsSL -o "/tmp/$tarball" "https://nodejs.org/dist/v$NODE_VERSION/$tarball"
+  curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt" | grep " $tarball\$" | (cd /tmp && sha256sum -c --quiet -)
+  rm -rf "$OPT/node.new"
+  mkdir -p "$OPT/node.new"
+  tar -xJf "/tmp/$tarball" -C "$OPT/node.new" --strip-components=1 --no-same-owner
+  rm -rf "$OPT/node" "/tmp/$tarball"
+  mv "$OPT/node.new" "$OPT/node"
+  app=1
+fi
+
 say "app"
 if ! cmp -s "$BUNDLE/opensuite" "$OPT/bin/opensuite"; then
   install -m 755 "$BUNDLE/opensuite" "$OPT/bin/opensuite"
+  app=1
+fi
+# A running engine is a child of the app, so a new one needs an app restart.
+if ! cmp -s "$BUNDLE/dist-headless/engine.mjs" "$OPT/dist-headless/engine.mjs"; then
+  rm -rf "$OPT/dist-headless"
+  cp -a "$BUNDLE/dist-headless" "$OPT/dist-headless"
   app=1
 fi
 cp -a "$BUNDLE/web/." "$OPT/web/"

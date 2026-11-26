@@ -125,6 +125,24 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   `tests/e2e-backdrop.cjs` reads the pixels; give it `OS_PORTRAIT` to judge
   edges on a real photo.
 
+- **Demo reset** (`server/demo.go`, `server/demo/`, added 2026-11-26). The
+  organisation named by `OS_DEMO` is put back to `demo/seed.json` every
+  morning and from Admin → All organisations. It runs inside the server, not
+  as a command, because the server holds the sync hub: deleted documents'
+  editors are disconnected (`Hub.evict`), and documents get new ids so no
+  device copy merges into the fresh seed. Rows are chosen by the
+  organisation's id and the engines are reached only through its own
+  people's accounts; mail is imported, never submitted, and events are made
+  with `sendSchedulingMessages: false` (`TestDemoReset` checks all of this).
+  The documents, spreadsheet and deck are built by
+  `web/scripts/demo-seed.mjs` with the app's own schema and engine
+  (`apps/doc-format.js`, `apps/slides-doc.js` exist so it can import them);
+  the pictures and PDF by `web/scripts/demo-pictures.cjs` in the test
+  browser. Comment authors and times are written as same-length stand-ins
+  that `demoPersonalise` swaps at reset. A document seed must end in a
+  paragraph, or the editor's trailing paragraph rewrites it on first open.
+  Chat cannot run on macOS, so the chat part is only exercised on a server.
+
 ## The public API, MCP server and agents (added 2026-11-26)
 
 - **One table.** Every operation of `/api/v1` is an `apiOp` in `api.go` (or
@@ -163,6 +181,8 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   pushed. OAuth follows the same revision: protected resource metadata,
   RFC 8414 metadata, Client ID Metadata Documents (fetched only from public
   addresses), dynamic registration, PKCE S256 only, `iss` in the response.
+- **Demo reset** revokes every token and connection of the demo
+  organisation's seed people and removes agents with the other members.
 - **Tests**: `server/api_test.go`, `content_test.go` (needs Node and the
   web build) and `tests/e2e-api.cjs` (needs `MCP_SDK`).
 
@@ -199,8 +219,11 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   working). k3s captures ports 80/443, so `deploy/coexist-k3s.sh` adds a
   Traefik TCP passthrough (kube-system objects named `opensuite-native`) to
   nginx on `10.42.0.1:9443/9080`. On a dedicated server none of that exists.
-- Deploy: `OS_OPERATORS=ada@demo.opensuite.online OS_SIGNUP=open OS_MAIL_RELAY=file:/etc/opensuite/mail-relay deploy/deploy.sh root@95.217.109.206 office.demo.opensuite.online file:/etc/opensuite/acme-email demo.opensuite.online`
+- Deploy: `OS_OPERATORS=ada@demo.opensuite.online OS_SIGNUP=open OS_MAIL_RELAY=file:/etc/opensuite/mail-relay OS_DEMO=file:/etc/opensuite/demo deploy/deploy.sh root@95.217.109.206 office.demo.opensuite.online file:/etc/opensuite/acme-email demo.opensuite.online`
   The settings are rewritten on every deploy, so pass all of them each time.
+  `/etc/opensuite/demo` names "Analytical Engines" (`j7axt4urdx`) and the
+  two demo passwords. The box also has an `opensuite-demo-reset` timer: that
+  is the old k3s stack's, not ours; leave it alone.
 - Mail there is `@demo.opensuite.online` (the old stack's domain, whose MX,
   SPF, DKIM and DMARC already exist for Brevo). Outbound goes through Brevo
   (free plan, about 300 a day) with the login in `/etc/opensuite/mail-relay`,

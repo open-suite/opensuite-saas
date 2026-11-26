@@ -394,8 +394,8 @@ func TestAPIFilesDocsMeetings(t *testing.T) {
 	}
 }
 
-// fakeMail answers the JMAP calls the mail API makes, and records them.
-func fakeMail(t *testing.T) (*httptest.Server, func() [][]json.RawMessage) {
+// fakeJMAP answers the JMAP calls the mail API makes, and records them.
+func fakeJMAP(t *testing.T) (*httptest.Server, func() [][]json.RawMessage) {
 	var mu sync.Mutex
 	var seen [][]json.RawMessage
 	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -430,7 +430,7 @@ func fakeMail(t *testing.T) (*httptest.Server, func() [][]json.RawMessage) {
 // organisation mails only addresses hosted here.
 func TestAPISendFollowsPlan(t *testing.T) {
 	s, ts := newTestServer(t, nil)
-	engine, seen := fakeMail(t)
+	engine, seen := fakeJMAP(t)
 	a := newClient(t, ts)
 	a.signup("Alpha", "alice")
 	s.cfg.MailURL = engine.URL
