@@ -91,7 +91,10 @@ settings pass through the environment: `OS_SIGNUP` (`open`, `code`, `closed`),
 `file:/path` to read it from a file on the server), `OS_DEMO`
 (`<org id>,<login>:<password>,...`, or `file:/path`: a public demo
 organisation, put back to the example story in `server/demo/` every morning at
-04:00 Berlin time and from Admin → All organisations).
+04:00 Berlin time and from Admin → All organisations), and
+`OS_ORG_DOMAIN_SUFFIX` (e.g. `opensuite.online`: every new organisation gets
+`<name>.opensuite.online` for its addresses, and may start with the example
+story as example data; publish a wildcard MX record for the suffix).
 
 For mail to be accepted by other providers, publish for the mail domain: an
 MX record to the server, SPF, the DKIM keys the mail engine generated (shown

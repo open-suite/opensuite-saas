@@ -130,7 +130,7 @@ function Message({ email, open, onToggle, group }) {
   return (
     <article class="msg">
       <div class={cx('msg-head', 'fold')} onClick={onToggle}>
-        <Avatar name={person(from)} size={34} />
+        <Avatar name={person(from)} email={from?.email} size={34} />
         <div class="meta">
           <div class="from ellipsis">{person(from)} {from?.name && <span class="muted" style={{ fontWeight: 400 }}>&lt;{from.email}&gt;</span>}</div>
           <div class="to ellipsis">{open ? 'to ' + addrList([...(email.to || []), ...(email.cc || [])]) : email.preview}</div>

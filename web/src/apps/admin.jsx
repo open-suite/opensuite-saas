@@ -79,7 +79,8 @@ function People({ data, reload }) {
   const me = user.value
   const limit = data?.limits?.maxUsers
   const list = data?.people || people.value
-  const mailDomains = [boot.value.mailDomain, ...(data?.domains || []).filter((d) => d.mailOk).map((d) => d.domain)]
+  const counted = list.filter((p) => !p.example).length
+  const mailDomains = org.value.mailDomains || [boot.value.mailDomain]
   const act = async (p, body, done) => {
     try {
       const res = await patch('/api/admin/users/' + p.id, body)
@@ -102,7 +103,7 @@ function People({ data, reload }) {
   return (
     <>
       <div class="row" style={{ marginBottom: 14, flexWrap: 'wrap' }}>
-        <span class="grow muted" style={{ minWidth: 180 }}>{list.length} of {limit ?? '…'} people on the {data?.limits?.label || ''} plan</span>
+        <span class="grow muted" style={{ minWidth: 180 }}>{counted} of {limit ?? '…'} people on the {data?.limits?.label || ''} plan{counted < list.length ? ', not counting example colleagues' : ''}</span>
         <Button icon={Bot} onClick={() => setDialog({ type: 'add', agent: true })}>Add agent</Button>
         <Button kind="primary" icon={UserPlus} onClick={() => setDialog({ type: 'add' })}>Add person</Button>
       </div>
@@ -125,6 +126,7 @@ function People({ data, reload }) {
                   <div class="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                     {p.status === 'suspended' ? <span class="badge badge-warn">Suspended</span> : <span class={cx('badge', p.role !== 'member' && 'badge-accent')}>{roleName[p.role]}</span>}
                     {p.agent && <span class="badge" title="No password. Works through the API with tokens.">Agent</span>}
+                    {p.example && <span class="badge" title="Part of the example data. Cannot sign in and does not count towards your plan.">Example</span>}
                   </div>
                 </td>
                 <td class="muted">{p.seen ? when(p.seen * 1000) : 'Never'}</td>
@@ -137,7 +139,7 @@ function People({ data, reload }) {
                       { divider: true },
                       p.agent
                         ? { label: 'Manage tokens', icon: KeyRound, onSelect: () => setDialog({ type: 'tokens', person: p }) }
-                        : { label: 'Reset password', icon: KeyRound, onSelect: () => act(p, { resetPassword: true }) },
+                        : !p.example && { label: 'Reset password', icon: KeyRound, onSelect: () => act(p, { resetPassword: true }) },
                       p.status === 'active'
                         ? { label: 'Suspend', icon: Ban, onSelect: () => act(p, { status: 'suspended' }, `${p.name} can no longer sign in`) }
                         : { label: 'Reactivate', icon: CircleCheck, onSelect: () => act(p, { status: 'active' }, `${p.name} can sign in again`) },
@@ -169,7 +171,9 @@ function Domains({ data, setData }) {
   const [name, setName] = useState('')
   const [checks, setChecks] = useState({})
   const [busy, setBusy] = useState('')
-  const domains = data?.domains || []
+  const all = data?.domains || []
+  const own = all.find((d) => d.included)
+  const domains = all.filter((d) => !d.included)
   const add = async (e) => {
     e.preventDefault()
     try {
@@ -201,6 +205,16 @@ function Domains({ data, setData }) {
   }
   return (
     <>
+      {own && (
+        <div class="card" style={{ marginBottom: 18 }}>
+          <div class="card-head">
+            <h2>{own.domain}</h2>
+            <span class="badge badge-ok">Email live</span>
+            <span class="badge">Included</span>
+          </div>
+          <p class="muted" style={{ padding: '12px 16px' }}>Your organisation's own address on Open Suite. New people and groups get their addresses here unless you choose one of your own domains. It needs no setup and cannot be removed.</p>
+        </div>
+      )}
       <p class="muted" style={{ marginBottom: 14, maxWidth: 640 }}>
         Use your own domain for the suite's address, for email, or both. Add it here, publish the DNS records shown, then check. A domain works as soon as its records are live. Once email is live, two signing records (DKIM) are added to the list: publish those too so other providers trust your mail.
       </p>
@@ -209,7 +223,7 @@ function Domains({ data, setData }) {
         <Button kind="primary" type="submit" icon={Globe} disabled={!name.trim()}>Add domain</Button>
         <span class="muted">{domains.length} of {data?.limits?.domains ?? '…'} on your plan</span>
       </form>
-      {domains.length === 0 && <div class="card"><Empty icon={Globe} title="No custom domains" text={`Everyone signs in at ${boot.value.domain} with an @${boot.value.mailDomain} address until you add one.`} /></div>}
+      {domains.length === 0 && <div class="card"><Empty icon={Globe} title="No custom domains" text={`Everyone signs in at ${boot.value.domain} with an @${own?.domain || boot.value.mailDomain} address until you add one.`} /></div>}
       {domains.map((d) => (
         <div class="card" style={{ marginBottom: 14 }} key={d.domain}>
           <div class="card-head">
@@ -268,13 +282,44 @@ function Organisation({ data }) {
       </form>
       <div class="card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div class="row"><h2 class="grow">Plan</h2><span class="badge badge-accent">{lim?.label || '…'}</span></div>
-        <div class="row"><span class="grow">People</span><b>{(data?.people || people.value).length} / {lim?.maxUsers ?? '…'}</b></div>
-        <div class="row"><span class="grow">Groups</span><b>{groups.value.length} / {lim?.maxGroups ?? '…'}</b></div>
-        <div class="row"><span class="grow">Custom domains</span><b>{data?.domains?.length ?? 0} / {lim?.domains ?? '…'}</b></div>
+        <div class="row"><span class="grow">People</span><b>{(data?.people || people.value).filter((p) => !p.example).length} / {lim?.maxUsers ?? '…'}</b></div>
+        <div class="row"><span class="grow">Groups</span><b>{groups.value.filter((g) => !g.example).length} / {lim?.maxGroups ?? '…'}</b></div>
+        <div class="row"><span class="grow">Custom domains</span><b>{(data?.domains || []).filter((d) => !d.included).length} / {lim?.domains ?? '…'}</b></div>
         <div class="row"><span class="grow">Mail to other providers</span><b>{lim ? (lim.mailOutside ? 'Yes' : 'No, Open Suite addresses only') : '…'}</b></div>
         <div class="row"><span class="grow">Storage <span class="muted">· files {bytes(data?.usage?.files || 0)}, documents {bytes(Math.max(0, used - (data?.usage?.files || 0)))}</span></span><b>{bytes(used)} / {lim?.storageGB ?? '…'} GB</b></div>
         <div style={{ height: 6, borderRadius: 3, background: 'var(--sunken)', overflow: 'hidden' }}><div style={{ width: pct + '%', height: '100%', background: 'var(--accent)' }} /></div>
       </div>
+      {org.value.example && <ExampleData />}
+    </div>
+  )
+}
+
+// The example data the organisation started with, and the way to remove it.
+function ExampleData() {
+  const [asking, setAsking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const remove = async () => {
+    setBusy(true)
+    try {
+      await del('/api/v1/admin/example-data')
+      await refreshBoot()
+      toast('The example data was removed')
+      setAsking(false)
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+    setBusy(false)
+  }
+  return (
+    <div class="card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <h2>Example data</h2>
+      <p class="muted">Your organisation started with example colleagues, documents, files, mail, events, a Sales shared inbox and a chat. Remove them when you're ready to work on your own. Anything you made stays.</p>
+      <div><Button kind="danger" icon={Trash2} onClick={() => setAsking(true)}>Remove example data</Button></div>
+      {asking && (
+        <Modal title="Remove the example data?" onClose={() => !busy && setAsking(false)} footer={<><Button disabled={busy} onClick={() => setAsking(false)}>Cancel</Button><Button kind="danger" busy={busy} onClick={remove}>Remove</Button></>}>
+          <p>The example colleagues and their mailboxes, the Sales group and its mail, the example documents, files and meeting rooms, and the example mail, events, contacts and chats in your own accounts are deleted. Documents and files you made stay; any you put in an example folder move to the top of Files.</p>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -309,7 +354,7 @@ function Operator() {
         <tbody>
           {(orgs || []).map((o) => (
             <tr key={o.id}>
-              <td style={{ fontWeight: 600 }}>{o.name} {o.demo && <span class="badge badge-accent">Demo</span>}</td>
+              <td><div style={{ fontWeight: 600 }}>{o.name} {o.demo && <span class="badge badge-accent">Demo</span>}</div>{o.domain && <div class="muted" style={{ fontSize: 12.5 }}>{o.domain}</div>}</td>
               <td>{o.users}</td>
               <td>{o.docs}</td>
               <td class="muted">{when(o.created * 1000)}</td>

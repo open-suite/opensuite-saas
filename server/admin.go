@@ -11,8 +11,10 @@ import (
 )
 
 type Domain struct {
-	Domain  string       `json:"domain"`
-	WebOK   bool         `json:"webOk"`
+	Domain string `json:"domain"`
+	// Included marks the organisation's own subdomain (orgdomain.go).
+	Included bool         `json:"included,omitempty"`
+	WebOK    bool         `json:"webOk"`
 	MailOK  bool         `json:"mailOk"`
 	Records []DNSRecord  `json:"records"`
 	Created int64        `json:"created"`
@@ -35,19 +37,32 @@ var domainRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]
 
 func (s *Server) orgDomains(orgID string) []Domain {
 	out := []Domain{}
-	rows, err := s.r.Query(`SELECT domain, web_ok, mail_ok, dkim, created FROM domains WHERE org_id = ? ORDER BY created`, orgID)
+	rows, err := s.r.Query(`SELECT domain, web_ok, mail_ok, dkim, created, kind FROM domains WHERE org_id = ? ORDER BY kind = 'org' DESC, created`, orgID)
 	if err != nil {
 		return out
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var d Domain
-		var dkim string
-		rows.Scan(&d.Domain, &d.WebOK, &d.MailOK, &dkim, &d.Created)
-		d.Records = s.domainRecords(orgID, d.Domain, dkim)
+		var dkim, kind string
+		rows.Scan(&d.Domain, &d.WebOK, &d.MailOK, &dkim, &d.Created, &kind)
+		// The organisation's own subdomain needs nothing published.
+		d.Included = kind == "org"
+		d.Records = []DNSRecord{}
+		if !d.Included {
+			d.Records = s.domainRecords(orgID, d.Domain, dkim)
+		}
 		out = append(out, d)
 	}
 	return out
+}
+
+// memberCount is what the plan's people limit counts: everyone but the
+// example colleagues (example.go), who cannot sign in.
+func (s *Server) memberCount(orgID string) int {
+	var n int
+	s.r.QueryRow(`SELECT count(*) FROM users WHERE org_id = ? AND example = 0`, orgID).Scan(&n)
+	return n
 }
 
 // domainRecords lists what a customer must publish. Web access needs only the
@@ -90,22 +105,6 @@ func (s *Server) handleOrgUpdate(w http.ResponseWriter, r *http.Request, u *User
 	ok(w, map[string]bool{"ok": true})
 }
 
-// mailDomainsFor lists the domains an organisation may create addresses on.
-func (s *Server) mailDomainsFor(orgID string) []string {
-	out := []string{s.cfg.MailDomain}
-	rows, err := s.r.Query(`SELECT domain FROM domains WHERE org_id = ? AND mail_ok = 1`, orgID)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var d string
-		rows.Scan(&d)
-		out = append(out, d)
-	}
-	return out
-}
-
 func tempPassword() string { return newID(4) + "-" + newID(4) + "-" + newID(4) }
 
 // handleUserCreate adds a person, or with "agent" an agent member. An agent
@@ -125,25 +124,24 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, u *Use
 		fail(w, 400, "Enter the person's name.")
 		return
 	}
-	if msg := validUsername(in.Username); msg != "" {
-		fail(w, 400, msg)
+	domains := s.mailDomainsFor(u.OrgID)
+	if in.Domain == "" {
+		in.Domain = domains[0]
+	}
+	if !slices.Contains(domains, in.Domain) {
+		fail(w, 400, "That domain isn't verified for mail yet.")
 		return
 	}
-	if in.Domain == "" {
-		in.Domain = s.cfg.MailDomain
-	}
-	if !slices.Contains(s.mailDomainsFor(u.OrgID), in.Domain) {
-		fail(w, 400, "That domain isn't verified for mail yet.")
+	if msg := validLocalPart(in.Username, in.Domain == s.cfg.MailDomain); msg != "" {
+		fail(w, 400, msg)
 		return
 	}
 	if in.Role != "admin" {
 		in.Role = "member"
 	}
 	var plan string
-	var count int
 	s.r.QueryRow(`SELECT plan FROM orgs WHERE id = ?`, u.OrgID).Scan(&plan)
-	s.r.QueryRow(`SELECT count(*) FROM users WHERE org_id = ?`, u.OrgID).Scan(&count)
-	if lim := planFor(plan); count >= lim.MaxUsers {
+	if lim := planFor(plan); s.memberCount(u.OrgID) >= lim.MaxUsers {
 		fail(w, 402, "Your plan includes "+itoa(lim.MaxUsers)+" people. Upgrade to add more.")
 		return
 	}
@@ -225,6 +223,10 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, u *Use
 		fail(w, 409, "Agents have no password. They sign in with API tokens.")
 		return
 	}
+	if in.ResetPassword && t.Example {
+		fail(w, 409, "Example colleagues cannot sign in. Add a real person instead.")
+		return
+	}
 	lastOwner := t.Role == "owner" && s.ownerCount(u.OrgID) <= 1
 	if in.Name != nil && strings.TrimSpace(*in.Name) != "" {
 		t.Name = strings.TrimSpace(*in.Name)
@@ -294,6 +296,7 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request, u *Use
 	s.w.Exec(`UPDATE docs SET owner_id = ? WHERE owner_id = ?`, u.ID, t.ID)
 	s.w.Exec(`UPDATE meetings SET owner_id = ? WHERE owner_id = ?`, u.ID, t.ID)
 	s.w.Exec(`DELETE FROM users WHERE id = ?`, t.ID)
+	s.dropPhoto(t.ID)
 	go s.chatDeactivate(t)
 	go s.mailDeleteAccount(t)
 	go s.refreshPolicies(u.OrgID)
@@ -309,14 +312,14 @@ func (s *Server) handleDomainAdd(w http.ResponseWriter, r *http.Request, u *User
 		return
 	}
 	d := strings.ToLower(strings.TrimSpace(in.Domain))
-	if !domainRe.MatchString(d) || d == s.cfg.Domain || d == s.cfg.MailDomain || strings.HasSuffix(d, "."+s.cfg.Domain) {
+	if !domainRe.MatchString(d) || d == s.cfg.Domain || d == s.cfg.MailDomain || strings.HasSuffix(d, "."+s.cfg.Domain) || s.underSuffix(d) {
 		fail(w, 400, "Enter a domain you own, like example.com.")
 		return
 	}
 	var plan string
 	var count int
 	s.r.QueryRow(`SELECT plan FROM orgs WHERE id = ?`, u.OrgID).Scan(&plan)
-	s.r.QueryRow(`SELECT count(*) FROM domains WHERE org_id = ?`, u.OrgID).Scan(&count)
+	s.r.QueryRow(`SELECT count(*) FROM domains WHERE org_id = ? AND kind = 'own'`, u.OrgID).Scan(&count)
 	if lim := planFor(plan); count >= lim.Domains {
 		fail(w, 402, "Your plan includes "+itoa(lim.Domains)+" custom domain(s).")
 		return
@@ -332,6 +335,10 @@ func (s *Server) handleDomainAdd(w http.ResponseWriter, r *http.Request, u *User
 
 func (s *Server) handleDomainDelete(w http.ResponseWriter, r *http.Request, u *User) {
 	d := strings.ToLower(r.PathValue("domain"))
+	if d == s.orgDomain(u.OrgID) {
+		fail(w, 409, "This is your organisation's own address on Open Suite. It cannot be removed.")
+		return
+	}
 	var n int
 	s.r.QueryRow(`SELECT (SELECT count(*) FROM users WHERE org_id = ?1 AND email LIKE ?2) + (SELECT count(*) FROM mail_groups WHERE org_id = ?1 AND email LIKE ?2)`, u.OrgID, "%@"+d).Scan(&n)
 	if n > 0 {
@@ -350,7 +357,7 @@ func (s *Server) handleDomainDelete(w http.ResponseWriter, r *http.Request, u *U
 func (s *Server) handleDomainVerify(w http.ResponseWriter, r *http.Request, u *User) {
 	d := strings.ToLower(r.PathValue("domain"))
 	var n int
-	s.r.QueryRow(`SELECT count(*) FROM domains WHERE domain = ? AND org_id = ?`, d, u.OrgID).Scan(&n)
+	s.r.QueryRow(`SELECT count(*) FROM domains WHERE domain = ? AND org_id = ? AND kind = 'own'`, d, u.OrgID).Scan(&n)
 	if n == 0 {
 		fail(w, 404, "No such domain.")
 		return
@@ -416,16 +423,18 @@ func (s *Server) handleOperatorOrgs(w http.ResponseWriter, r *http.Request, u *U
 		Users   int    `json:"users"`
 		Docs    int    `json:"docs"`
 		Demo    bool   `json:"demo"` // reset every morning (demo.go)
+		Domain  string `json:"domain"`
 	}
 	out := []row{}
 	rows, err := s.r.Query(`SELECT o.id, o.name, o.plan, o.created,
-		(SELECT count(*) FROM users WHERE org_id = o.id), (SELECT count(*) FROM docs WHERE org_id = o.id)
+		(SELECT count(*) FROM users WHERE org_id = o.id AND example = 0), (SELECT count(*) FROM docs WHERE org_id = o.id),
+		coalesce((SELECT domain FROM domains WHERE org_id = o.id AND kind = 'org'), '')
 		FROM orgs o ORDER BY o.created DESC LIMIT 1000`)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
 			var x row
-			rows.Scan(&x.ID, &x.Name, &x.Plan, &x.Created, &x.Users, &x.Docs)
+			rows.Scan(&x.ID, &x.Name, &x.Plan, &x.Created, &x.Users, &x.Docs, &x.Domain)
 			x.Demo = s.demo != nil && x.ID == s.demo.org
 			out = append(out, x)
 		}

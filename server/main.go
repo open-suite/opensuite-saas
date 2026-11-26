@@ -21,7 +21,10 @@ import (
 type Config struct {
 	Domain     string // primary web host, e.g. office.opensuite.online
 	MailDomain string // default mailbox domain
-	Listen     string
+	// OrgDomainSuffix, when set, gives every new organisation a mail domain of
+	// its own under it: <slug>.<suffix> (orgdomain.go).
+	OrgDomainSuffix string
+	Listen          string
 	DataDir    string
 	WebDir     string
 	Secret     []byte
@@ -110,6 +113,7 @@ func main() {
 		AcmeURL:       env("OS_ACME_URL", "https://acme-v02.api.letsencrypt.org/directory"),
 	}
 	cfg.MailDomain = strings.ToLower(env("OS_MAIL_DOMAIN", cfg.Domain))
+	cfg.OrgDomainSuffix = strings.Trim(strings.ToLower(env("OS_ORG_DOMAIN_SUFFIX", "")), ".")
 	cfg.MatrixName = env("OS_MATRIX_NAME", cfg.Domain)
 	cfg.MailHost = env("OS_MAIL_HOST", cfg.Domain)
 	cfg.CertDir = env("OS_CERTS", cfg.DataDir+"/certs")

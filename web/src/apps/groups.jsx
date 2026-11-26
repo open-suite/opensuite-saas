@@ -143,11 +143,11 @@ export function GroupSettings({ id, onClose }) {
 export function GroupsAdmin({ data }) {
   const [dialog, setDialog] = useState(null)
   const list = groups.value
-  const mailDomains = [boot.value.mailDomain, ...(data?.domains || []).filter((d) => d.mailOk).map((d) => d.domain)]
+  const mailDomains = boot.value.org?.mailDomains || [boot.value.mailDomain]
   return (
     <>
       <div class="row" style={{ marginBottom: 14, flexWrap: 'wrap' }}>
-        <span class="grow muted" style={{ minWidth: 180 }}>{list.length} of {data?.limits?.maxGroups ?? '…'} groups on the {data?.limits?.label || ''} plan</span>
+        <span class="grow muted" style={{ minWidth: 180 }}>{list.filter((g) => !g.example).length} of {data?.limits?.maxGroups ?? '…'} groups on the {data?.limits?.label || ''} plan{list.some((g) => g.example) ? ', not counting the example group' : ''}</span>
         <Button kind="primary" icon={Plus} onClick={() => setDialog({ type: 'new' })}>New group</Button>
       </div>
       {list.length === 0 ? (

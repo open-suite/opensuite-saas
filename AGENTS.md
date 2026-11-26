@@ -237,6 +237,45 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   for home, calendar and search. `apps/groups.jsx` is Admin → Groups and the
   settings dialog Mail opens for group admins. `tests/e2e-groups.cjs`.
 
+## Organisation domains, example data, pictures (added 2026-11-26)
+
+- **Own domains** (`server/orgdomain.go`). With `OS_ORG_DOMAIN_SUFFIX` set,
+  sign-up makes `<slug>.<suffix>` a `domains` row of `kind = 'org'`,
+  `mail_ok = 1`, and the founder's address is on it. It is first in
+  `mailDomainsFor` (the default for people and groups), needs no records,
+  does not count against the plan's custom domains, cannot be removed, and
+  reserved local parts do not apply on it. The mail engine learns it in
+  `mailEnsureAccount` (created on demand only for `kind = 'org'`). Nothing
+  under the suffix can be added as a custom domain. `reservedSlugs` holds
+  every host name in use under the demo and production domains; add any new
+  host there. Organisations made before the setting keep the shared domain;
+  nothing migrates them. Without the setting sign-up is as before and
+  example data is refused. `dev/run.sh` sets the suffix to the instance's
+  mail domain.
+- **DNS.** Mail for `<slug>.demo.opensuite.online` arrives through the
+  wildcard A record (no MX: senders fall back to the A record). For
+  `opensuite.online` the suffix needs a wildcard MX (see the handover note in
+  the report of 2026-11-26).
+- **Example data** (`server/seed.go`, the story in `server/demo/seed.json`
+  shared with the demo through `tell` in `demo.go`). Seed entries naming
+  `me` (the founder) exist only in example data; `withoutMe` drops them for
+  the demo, and `{me}`/`{org}` in text are filled per organisation. Example
+  colleagues are `users.example = 1` with no password and do not count
+  against the people limit (`memberCount`); the example group is
+  `mail_groups.example = 1` and does not count against the group limit.
+  Everything made is recorded in `example_items` (after the content
+  transaction commits: the single writer is held until then), and
+  `admin_remove_example_data` deletes exactly that. Documents embed picture
+  ids, so example data gives the seed's pictures new ids of the same length
+  (`personalise`). `tests/e2e-signup.cjs` checks both sign-up paths.
+- **Profile pictures** (`server/photos.go`, `Avatar` in `ui.jsx`). Stored as
+  `<data>/photos/<user id>`, PNG, JPEG or WebP up to 1 MB, served only to the
+  same organisation with `nosniff` and a sandbox CSP. `users.photo` is a
+  version, put in the URL so the browser caches a picture for good. The
+  account page crops and shrinks to 256 px JPEG before upload. The story's
+  people have illustrated pictures (`web/scripts/avatars/*.svg`, drawn into
+  `server/demo/*.png` by `web/scripts/demo-avatars.cjs`).
+
 ## Engines: facts verified on 2026-11-21
 
 - **Stalwart 1.1.1** has no TOML and no REST admin API any more. All
@@ -271,7 +310,7 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   working). k3s captures ports 80/443, so `deploy/coexist-k3s.sh` adds a
   Traefik TCP passthrough (kube-system objects named `opensuite-native`) to
   nginx on `10.42.0.1:9443/9080`. On a dedicated server none of that exists.
-- Deploy: `OS_OPERATORS=ada@demo.opensuite.online OS_SIGNUP=open OS_MAIL_RELAY=file:/etc/opensuite/mail-relay OS_DEMO=file:/etc/opensuite/demo deploy/deploy.sh root@95.217.109.206 office.demo.opensuite.online file:/etc/opensuite/acme-email demo.opensuite.online`
+- Deploy: `OS_OPERATORS=ada@demo.opensuite.online OS_SIGNUP=open OS_MAIL_RELAY=file:/etc/opensuite/mail-relay OS_DEMO=file:/etc/opensuite/demo OS_ORG_DOMAIN_SUFFIX=demo.opensuite.online deploy/deploy.sh root@95.217.109.206 office.demo.opensuite.online file:/etc/opensuite/acme-email demo.opensuite.online`
   The settings are rewritten on every deploy, so pass all of them each time.
   `/etc/opensuite/demo` names "Analytical Engines" (`j7axt4urdx`) and the
   two demo passwords. The box also has an `opensuite-demo-reset` timer: that

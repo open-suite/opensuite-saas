@@ -26,6 +26,8 @@ fi
 [ -f "$DATA/secret" ] || openssl rand -hex 32 > "$DATA/secret"
 export OS_DOMAIN="$NAME.localhost:$PORT"
 export OS_MAIL_DOMAIN="$NAME.dev.test"
+# New organisations get <slug>.$NAME.dev.test, as they get <slug>.<suffix> on a server.
+export OS_ORG_DOMAIN_SUFFIX="${OS_ORG_DOMAIN_SUFFIX-$OS_MAIL_DOMAIN}"
 export OS_MAIL_HOST="localhost"
 export OS_LISTEN="127.0.0.1:$PORT"
 export OS_DATA="$DATA"

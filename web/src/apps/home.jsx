@@ -54,7 +54,7 @@ export function Home() {
             <div class="card-head"><h2>Inbox</h2>{inbox?.unreadEmails > 0 && <span class="badge badge-accent">{inbox.unreadEmails} unread</span>}<a href="/mail">Open mail</a></div>
             {mail.length === 0 ? <Empty icon={MailIcon} title="Inbox zero" text="New mail shows up here as it arrives." /> : mail.map((e) => (
               <a class="list-row" href={'/mail?open=' + e.threadId} key={e.id}>
-                <Avatar name={e.from?.[0]?.name || e.from?.[0]?.email} size={28} />
+                <Avatar name={e.from?.[0]?.name || e.from?.[0]?.email} email={e.from?.[0]?.email} size={28} />
                 <span class="grow" style={{ minWidth: 0 }}>
                   <div class="ellipsis" style={{ fontWeight: e.keywords?.$seen ? 450 : 650 }}>{e.from?.[0]?.name || e.from?.[0]?.email}</div>
                   <div class="sub ellipsis">{e.subject || '(no subject)'}</div>

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#e9e2f5"/>
+  <circle cx="420" cy="90" r="120" fill="#ddd2ef"/>
+  <!-- hair behind -->
+  <path d="M150 250 C140 150 200 95 256 95 C312 95 372 150 362 250 C360 300 340 330 330 340 L182 340 C172 330 152 300 150 250 Z" fill="#3b2a24"/>
+  <!-- dress -->
+  <path d="M96 512 C100 420 160 380 256 380 C352 380 412 420 416 512 Z" fill="#6b3f8f"/>
+  <path d="M200 384 C220 410 292 410 312 384 C300 380 280 378 256 378 C232 378 212 380 200 384 Z" fill="#f3eee6"/>
+  <path d="M206 388 C228 420 284 420 306 388" fill="none" stroke="#d9cfbf" stroke-width="5" stroke-dasharray="2 7" stroke-linecap="round"/>
+  <!-- neck -->
+  <path d="M228 320 L284 320 L288 384 C272 396 240 396 224 384 Z" fill="#f2c9a8"/>
+  <!-- face -->
+  <ellipse cx="256" cy="248" rx="78" ry="92" fill="#f6d2b4"/>
+  <!-- hair front: centre parting with smooth bands over the ears -->
+  <path d="M256 150 C214 150 182 180 176 236 C190 214 214 192 256 174 Z" fill="#3b2a24"/>
+  <path d="M256 150 C298 150 330 180 336 236 C322 214 298 192 256 174 Z" fill="#3b2a24"/>
+  <path d="M176 232 C168 260 172 290 186 304 C186 280 190 256 198 240 Z" fill="#3b2a24"/>
+  <path d="M336 232 C344 260 340 290 326 304 C326 280 322 256 314 240 Z" fill="#3b2a24"/>
+  <circle cx="176" cy="300" r="20" fill="#4a352d"/>
+  <circle cx="336" cy="300" r="20" fill="#4a352d"/>
+  <path d="M256 150 L256 176" stroke="#5a4237" stroke-width="3"/>
+  <!-- eyes, brows, nose, mouth -->
+  <path d="M212 226 C222 218 236 218 244 224" fill="none" stroke="#3b2a24" stroke-width="5" stroke-linecap="round"/>
+  <path d="M268 224 C276 218 290 218 300 226" fill="none" stroke="#3b2a24" stroke-width="5" stroke-linecap="round"/>
+  <ellipse cx="229" cy="246" rx="7" ry="8" fill="#2c211c"/>
+  <ellipse cx="283" cy="246" rx="7" ry="8" fill="#2c211c"/>
+  <path d="M256 254 C252 270 250 278 260 280" fill="none" stroke="#d99f80" stroke-width="4" stroke-linecap="round"/>
+  <path d="M234 300 C246 310 266 310 278 300" fill="none" stroke="#b5524f" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="212" cy="282" r="12" fill="#f2b4a0" opacity=".6"/>
+  <circle cx="300" cy="282" r="12" fill="#f2b4a0" opacity=".6"/>
+  <!-- brooch -->
+  <circle cx="256" cy="408" r="10" fill="#c9a24a"/>
+</svg>

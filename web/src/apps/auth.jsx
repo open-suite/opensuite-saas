@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { boot, setBoot, user } from '../lib/store.js'
+import { boot, setBoot, user, toast } from '../lib/store.js'
 import { get, post } from '../lib/api.js'
 import { navigate } from '../lib/router.js'
 import { Button, Field, Logo } from '../ui.jsx'
@@ -55,32 +55,51 @@ export function Login() {
   )
 }
 
-export function Signup() {
-  const b = boot.value
-  const [f, setF] = useState({ org: '', name: '', username: '', password: '', code: '' })
-  const [avail, setAvail] = useState(null)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const timer = useRef()
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+// slugify matches the server's (orgdomain.go): "Shah & Daughters Ltd." is
+// shah-daughters-ltd.
+export const slugify = (name) =>
+  name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 's').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32).replace(/-+$/, '')
 
+// useCheck asks the server, a moment after typing stops, whether a name is
+// free.
+function useCheck(path, value, minLength) {
+  const [avail, setAvail] = useState(null)
+  const timer = useRef()
   useEffect(() => {
     clearTimeout(timer.current)
     setAvail(null)
-    if (f.username.length < 3) return
+    if (!path || value.length < minLength) return
     timer.current = setTimeout(async () => {
       try {
-        setAvail(await get('/api/signup/check?username=' + encodeURIComponent(f.username.toLowerCase())))
+        setAvail({ ...(await get(path + encodeURIComponent(value.toLowerCase()))), value })
       } catch {}
     }, 250)
-  }, [f.username])
+  }, [path, value])
+  return avail?.value === value ? avail : null
+}
+
+export function Signup() {
+  const b = boot.value
+  const suffix = b?.orgDomainSuffix || ''
+  const [f, setF] = useState({ org: '', slug: '', name: '', username: '', password: '', code: '', example: !!suffix })
+  const [slugTouched, setSlugTouched] = useState(false)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+  const setOrg = (e) => setF({ ...f, org: e.target.value, slug: slugTouched ? f.slug : slugify(e.target.value) })
+  // With their own domain, any name is free inside it; only the domain is checked.
+  const slugAvail = useCheck(suffix && '/api/signup/check?slug=', f.slug, 3)
+  const userAvail = useCheck(!suffix && '/api/signup/check?username=', f.username, 3)
+  const domain = suffix ? (f.slug || 'your-organisation') + '.' + suffix : b?.mailDomain
 
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true)
     setError('')
     try {
-      setBoot(await post('/api/signup', f))
+      const res = await post('/api/signup', f)
+      setBoot(res)
+      if (res.exampleError) toast(res.exampleError, 'error')
       const next = new URLSearchParams(location.search).get('next') || ''
       navigate(next.startsWith('/oauth/authorize?') ? next : '/', { replace: true })
     } catch (err) {
@@ -96,15 +115,23 @@ export function Signup() {
       <form onSubmit={submit} style={{ display: 'contents' }}>
         {error && <div class="form-error" role="alert">{error}</div>}
         <Field label="Organisation">
-          <input class="input" autofocus value={f.org} onInput={set('org')} placeholder="Acme Ltd" required />
+          <input class="input" autofocus value={f.org} onInput={setOrg} placeholder="Acme Ltd" required />
         </Field>
+        {suffix && (
+          <Field label="Your organisation's address" error={slugAvail && !slugAvail.available ? slugAvail.reason : ''} hint={(slugAvail?.available ? 'Available. ' : '') + `Everyone you add gets an email address at ${domain}.`}>
+            <div class="input-group">
+              <input class="input" id="signup-slug" autocapitalize="none" spellcheck={false} value={f.slug} onInput={(e) => { setSlugTouched(true); setF({ ...f, slug: e.target.value.toLowerCase() }) }} placeholder="acme" required />
+              <span class="suffix shrink" title={'.' + suffix}>.{suffix}</span>
+            </div>
+          </Field>
+        )}
         <Field label="Your name">
           <input class="input" autocomplete="name" value={f.name} onInput={set('name')} required />
         </Field>
-        <Field label="Your address" error={avail && !avail.available ? avail.reason : ''} hint={avail?.available ? 'Available. This is your sign-in and your email address.' : 'This is your sign-in and your email address.'}>
+        <Field label="Your address" error={userAvail && !userAvail.available ? userAvail.reason : ''} hint={suffix ? `You'll sign in and get email as ${f.username.toLowerCase() || 'you'}@${domain}.` : (userAvail?.available ? 'Available. ' : '') + 'This is your sign-in and your email address.'}>
           <div class="input-group">
             <input class="input" autocomplete="username" autocapitalize="none" spellcheck={false} value={f.username} onInput={set('username')} required />
-            <span class="suffix">@{b?.mailDomain}</span>
+            <span class="suffix shrink" title={'@' + domain}>@{domain}</span>
           </div>
         </Field>
         <Field label="Password" hint="At least 10 characters.">
@@ -115,7 +142,20 @@ export function Signup() {
             <input class="input" value={f.code} onInput={set('code')} required />
           </Field>
         )}
-        <Button kind="primary" class="btn-lg btn-block" type="submit" busy={busy}>Create organisation</Button>
+        {suffix && (
+          <fieldset class="start-choice">
+            <legend>Start with</legend>
+            <label class={f.example ? 'on' : ''}>
+              <input type="radio" name="start" checked={f.example} onChange={() => setF({ ...f, example: true })} />
+              <span><b>Example data</b><span class="muted">Two example colleagues with documents, files, mail, a shared inbox, a calendar and a chat to explore. Remove it all in Admin when you're ready.</span></span>
+            </label>
+            <label class={!f.example ? 'on' : ''}>
+              <input type="radio" name="start" checked={!f.example} onChange={() => setF({ ...f, example: false })} />
+              <span><b>An empty organisation</b><span class="muted">Just you, ready to add your own people and work.</span></span>
+            </label>
+          </fieldset>
+        )}
+        <Button kind="primary" class="btn-lg btn-block" type="submit" busy={busy}>{busy && f.example ? 'Setting up your example data…' : 'Create organisation'}</Button>
       </form>
     </Card>
   )

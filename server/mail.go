@@ -277,7 +277,11 @@ func (s *Server) mailEnsureAccount(ctx context.Context, u *User) {
 		return
 	}
 	local, domain, _ := strings.Cut(u.Email, "@")
-	domID, err := s.mailDomainID(ctx, s.cfg.MailURL, domain, false)
+	// An organisation's own subdomain is ours to add whenever it is missing
+	// (orgdomain.go); a custom domain is added only once verified.
+	var own int
+	s.r.QueryRow(`SELECT count(*) FROM domains WHERE domain = ? AND kind = 'org'`, domain).Scan(&own)
+	domID, err := s.mailDomainID(ctx, s.cfg.MailURL, domain, own > 0)
 	if err != nil {
 		log.Printf("mail: %s: %v", u.Email, err)
 		return

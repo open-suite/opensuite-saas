@@ -37,6 +37,15 @@ export const isAdmin = computed(() => ['owner', 'admin'].includes(user.value?.ro
 
 export const peopleById = computed(() => Object.fromEntries(people.value.map((p) => [p.id, p])))
 export const peopleByMx = computed(() => Object.fromEntries(people.value.map((p) => [p.mx, p])))
+export const peopleByEmail = computed(() => Object.fromEntries(people.value.map((p) => [p.email.toLowerCase(), p])))
+
+// A colleague's profile picture, by id, address or chat id; null for none.
+// The version in the address lets the browser keep a picture for good.
+export function photoFor(key) {
+  if (!key) return null
+  const p = peopleById.value[key] || peopleByEmail.value[String(key).toLowerCase()] || peopleByMx.value[key]
+  return p?.photo ? `/api/v1/people/${p.id}/photo?v=${p.photo}` : null
+}
 
 export function setBoot(b) {
   boot.value = b

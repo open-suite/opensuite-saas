@@ -1,12 +1,20 @@
 package main
 
+// The story in demo/seed.json, and the two places it is told.
+//
 // The demo organisation. An installation may name one organisation as its
 // public demo (OS_DEMO). Every morning, and whenever an operator asks (Admin,
-// All organisations), it is put back to the story in demo/seed.json: its
-// people with their passwords, names and roles and nobody else, and all of
-// its content in every app replaced by the seed. Sessions stay.
+// All organisations), it is put back to the story: its people with their
+// passwords, names and roles and nobody else, and all of its content in every
+// app replaced by the seed. Sessions stay.
 //
 //   OS_DEMO=<org id>,<login>:<password>,<login>:<password>
+//
+// Example data. A new organisation may start with the same story
+// (example.go): the seed's people join it as example colleagues, and the
+// person who signed up, "me" in the seed, finds mail, events, a shared inbox
+// and a chat waiting for them. Entries that name "me" exist only there; the
+// demo leaves them out (withoutMe).
 //
 // The reset runs inside the server rather than as a separate command because
 // the running process holds live state about documents: the sync hub's rooms,
@@ -16,8 +24,8 @@ package main
 // drop the document). It also schedules itself, so it survives redeploys with
 // no timer to install.
 //
-// Documents get new ids at every reset, so a copy kept on someone's device
-// can never merge into the fresh seed. Mail is only ever imported into the
+// Documents get new ids every time, so a copy kept on someone's device can
+// never merge into the fresh seed. Mail is only ever imported into the
 // mailboxes, never sent.
 
 import (
@@ -49,6 +57,7 @@ var demoFiles embed.FS
 const (
 	demoZone = "Europe/Berlin" // the daily reset runs at demoHour here
 	demoHour = 4
+	seedMe   = "me" // the person who signed up, in example data
 )
 
 type demoConfig struct {
@@ -58,11 +67,13 @@ type demoConfig struct {
 
 // The story. Times are relative to the reset: hours before it, days before
 // it at a local time (mail), or a weekday of this week or the next (events).
+// Text may say {org} for the organisation's name and {me} for the first
+// name of the person who signed up.
 type demoSeed struct {
 	Org     string
 	Plan    string
 	Zone    string
-	People  []struct{ Key, Login, Name, Role string }
+	People  []struct{ Key, Login, Name, Role, Photo string }
 	Folders []struct {
 		Key, Name, Parent, Owner, Access string
 		Link                             bool
@@ -125,6 +136,53 @@ func loadDemoSeed() (*demoSeed, error) {
 		return nil, errf("demo/seed.json: %v", err)
 	}
 	return seed, nil
+}
+
+// withoutMe is the story as the demo tells it: nothing that names the person
+// who signed up, who exists only in example data.
+func (seed *demoSeed) withoutMe() *demoSeed {
+	out := *seed
+	not := func(list []string) []string {
+		return slices.DeleteFunc(slices.Clone(list), func(k string) bool { return k == seedMe })
+	}
+	names := func(v string) bool { return strings.Contains(v, "{me}") }
+	out.Docs = nil
+	for _, d := range seed.Docs {
+		if d.Owner != seedMe {
+			d.Shares = slices.DeleteFunc(slices.Clone(d.Shares), func(sh Share) bool { return sh.User == seedMe })
+			out.Docs = append(out.Docs, d)
+		}
+	}
+	out.Groups = nil
+	for _, g := range seed.Groups {
+		g.Members = slices.DeleteFunc(slices.Clone(g.Members), func(m [2]string) bool { return m[0] == seedMe })
+		out.Groups = append(out.Groups, g)
+	}
+	out.Mail = nil
+	for _, m := range seed.Mail {
+		if m.From != seedMe && !slices.Contains(m.To, seedMe) && !names(m.Subject+m.Body) {
+			m.ReadBy, m.RepliedBy = not(m.ReadBy), not(m.RepliedBy)
+			out.Mail = append(out.Mail, m)
+		}
+	}
+	out.Events = nil
+	for _, e := range seed.Events {
+		if e.Owner != seedMe && !names(e.Title+e.Description) {
+			e.Guests = not(e.Guests)
+			out.Events = append(out.Events, e)
+		}
+	}
+	out.Contacts = slices.DeleteFunc(slices.Clone(seed.Contacts), func(c seedContact) bool { return c.Owner == seedMe })
+	out.Chat = nil
+	for _, c := range seed.Chat {
+		if c.Owner == seedMe {
+			continue
+		}
+		c.Members = not(c.Members)
+		c.Messages = slices.DeleteFunc(slices.Clone(c.Messages), func(m [2]string) bool { return m[0] == seedMe || names(m[1]) })
+		out.Chat = append(out.Chat, c)
+	}
+	return &out
 }
 
 func demoAsset(name string) []byte {
@@ -221,6 +279,27 @@ func (s *Server) handleDemoReset(w http.ResponseWriter, r *http.Request, u *User
 
 var demoMu sync.Mutex
 
+// seedRun is one telling of the story, into one organisation.
+type seedRun struct {
+	seed    *demoSeed
+	org     string
+	domain  string // where the story's addresses are
+	orgName string // {org}
+	me      string // {me}
+	example bool   // a new organisation's example data, recorded for removal
+	at      time.Time
+	loc     *time.Location
+	people  map[string]*User   // by key in the story
+	groups  map[string]*Group  // by key
+	rooms   map[string]string  // meeting room codes by key
+	blobs   map[string]string  // the seed's picture ids -> the ones made
+	made    func(kind, id, owner string) error
+}
+
+func (run *seedRun) text(v string) string {
+	return strings.NewReplacer("{org}", run.orgName, "{me}", run.me).Replace(v)
+}
+
 // resetDemo puts the demo organisation back to the seed. It touches nothing
 // outside that organisation: rows are chosen by its id, and the engines are
 // reached through its own people's accounts.
@@ -235,38 +314,59 @@ func (s *Server) resetDemo(ctx context.Context) error {
 	if s.r.QueryRow(`SELECT count(*) FROM orgs WHERE id = ?`, s.demo.org).Scan(&n); n == 0 {
 		return errf("the demo organisation %s does not exist", s.demo.org)
 	}
-	at := time.Now()
-	people, err := s.demoPeople(seed)
-	if err != nil {
+	run := &seedRun{seed: seed.withoutMe(), org: s.demo.org, domain: s.cfg.MailDomain, orgName: seed.Org, at: time.Now(),
+		made: func(string, string, string) error { return nil }}
+	if run.loc, err = time.LoadLocation(seed.Zone); err != nil {
 		return err
 	}
-	rooms, err := s.demoContent(seed, people, at)
-	if err != nil {
+	if run.people, err = s.demoPeople(run.seed); err != nil {
+		return err
+	}
+	if err := s.demoClear(ctx, run.org); err != nil {
+		return err
+	}
+	if _, err := s.w.Exec(`UPDATE orgs SET name = ?, plan = ? WHERE id = ?`, seed.Org, seed.Plan, run.org); err != nil {
+		return err
+	}
+	if err := s.tell(ctx, run); err != nil {
+		return err
+	}
+	s.w.Exec(`INSERT OR REPLACE INTO kv(k, v) VALUES('demo-reset', ?)`, run.at.Unix())
+	log.Printf("demo: organisation %s reset", s.demo.org)
+	return nil
+}
+
+// tell writes the story into the organisation: content, then each person's
+// mail, calendar and contacts, the groups' mail, and chat.
+func (s *Server) tell(ctx context.Context, run *seedRun) error {
+	if err := s.seedContent(run); err != nil {
 		return err
 	}
 	if s.cfg.MailURL != "" {
-		groups, err := s.demoGroups(ctx, seed, people)
-		if err != nil {
+		if err := s.seedGroups(ctx, run); err != nil {
 			return err
 		}
-		for _, p := range seed.People {
-			if err := s.demoGroupware(ctx, seed, people, groups, p.Key, rooms, at); err != nil {
+		keys := []string{}
+		for _, p := range run.seed.People {
+			keys = append(keys, p.Key)
+		}
+		if run.people[seedMe] != nil {
+			keys = append(keys, seedMe)
+		}
+		for _, key := range keys {
+			if err := s.seedGroupware(ctx, run, key); err != nil {
 				return err
 			}
 		}
-		for _, g := range seed.Groups {
-			if err := s.demoGroupMail(ctx, seed, people, groups, g.Key, at); err != nil {
+		for _, g := range run.seed.Groups {
+			if err := s.seedGroupMail(ctx, run, g.Key); err != nil {
 				return err
 			}
 		}
 	}
 	if s.cfg.MatrixURL != "" {
-		if err := s.demoChat(ctx, seed, people); err != nil {
-			return err
-		}
+		return s.seedChat(ctx, run)
 	}
-	s.w.Exec(`INSERT OR REPLACE INTO kv(k, v) VALUES('demo-reset', ?)`, at.Unix())
-	log.Printf("demo: organisation %s reset", s.demo.org)
 	return nil
 }
 
@@ -293,6 +393,9 @@ func (s *Server) demoPeople(seed *demoSeed) (map[string]*User, error) {
 			_, err = s.w.Exec(`UPDATE users SET name = ?, role = ?, status = 'active', must_change = 0, pw_hash = ? WHERE id = ?`, p.Name, p.Role, hash, id)
 		}
 		if err != nil {
+			return nil, err
+		}
+		if err := s.seedPhoto(id, p.Photo); err != nil {
 			return nil, err
 		}
 		u := s.userByID(id)
@@ -328,10 +431,19 @@ func (s *Server) demoPeople(seed *demoSeed) (map[string]*User, error) {
 		if _, err := s.w.Exec(`DELETE FROM users WHERE id = ? AND org_id = ?`, id, org); err != nil {
 			return nil, err
 		}
+		s.dropPhoto(id)
 		s.chatDeactivate(u)
 		s.mailDeleteAccount(u)
 	}
 	return people, nil
+}
+
+// seedPhoto gives a person of the story their picture.
+func (s *Server) seedPhoto(userID, asset string) error {
+	if asset == "" {
+		return s.setPhoto(userID, nil)
+	}
+	return s.setPhoto(userID, demoAsset(asset))
 }
 
 func (s *Server) orgIDs(query, org string) []string {
@@ -349,19 +461,28 @@ func (s *Server) orgIDs(query, org string) []string {
 	return out
 }
 
-// demoContent replaces everything the organisation holds in our own
-// database and on disk, and returns the new meeting rooms' codes by key.
-func (s *Server) demoContent(seed *demoSeed, people map[string]*User, at time.Time) (map[string]string, error) {
-	org := s.demo.org
+// demoClear deletes everything the demo organisation holds: in our own
+// database and on disk, its custom domains, and its groups with their mail.
+// Its people's own mailboxes are emptied later, through their accounts
+// (seedGroupware).
+func (s *Server) demoClear(ctx context.Context, org string) error {
+	if s.cfg.MailURL != "" {
+		for _, g := range s.orgGroups(org, nil) {
+			if err := s.groupDeleteMail(ctx, &g); err != nil {
+				return err
+			}
+			if _, err := s.w.Exec(`DELETE FROM mail_groups WHERE id = ? AND org_id = ?`, g.ID, org); err != nil {
+				return err
+			}
+		}
+	}
 	docs := s.orgIDs(`SELECT id FROM docs WHERE org_id = ?`, org)
 	files := s.orgIDs(`SELECT id FROM nodes WHERE org_id = ? AND kind = 'file'`, org)
 	blobs := s.orgIDs(`SELECT id FROM blobs WHERE org_id = ?`, org)
-	domains := s.orgIDs(`SELECT domain FROM domains WHERE org_id = ? AND mail_ok = 1`, org)
-	ago := func(hours int64) int64 { return at.Unix() - hours*3600 }
-
+	domains := s.orgIDs(`SELECT domain FROM domains WHERE org_id = ? AND mail_ok = 1 AND kind = 'own'`, org)
 	tx, err := s.w.Begin()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer tx.Rollback()
 	for _, q := range []string{
@@ -372,73 +493,15 @@ func (s *Server) demoContent(seed *demoSeed, people map[string]*User, at time.Ti
 		`DELETE FROM nodes WHERE org_id = ?1`,
 		`DELETE FROM blobs WHERE org_id = ?1`,
 		`DELETE FROM meetings WHERE org_id = ?1`,
-		`DELETE FROM domains WHERE org_id = ?1`,
+		`DELETE FROM domains WHERE org_id = ?1 AND kind = 'own'`,
 	} {
 		if _, err := tx.Exec(q, org); err != nil {
-			return nil, err
-		}
-	}
-	if _, err := tx.Exec(`UPDATE orgs SET name = ?, plan = ? WHERE id = ?`, seed.Org, seed.Plan, org); err != nil {
-		return nil, err
-	}
-
-	folders := map[string]string{}
-	for _, f := range seed.Folders {
-		id, link := newID(14), ""
-		if f.Link {
-			link = newToken()
-		}
-		folders[f.Key] = id
-		if _, err := tx.Exec(`INSERT INTO nodes(id, org_id, owner_id, parent_id, kind, name, access, link, created, updated) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-			id, org, people[f.Owner].ID, folders[f.Parent], "folder", f.Name, access(f.Access), link, ago(f.HoursAgo), ago(f.HoursAgo)); err != nil {
-			return nil, err
-		}
-	}
-	written := map[string][]byte{} // path -> content, written once the rows are in
-	for _, f := range seed.Files {
-		id, body := newID(14), demoAsset(f.Asset)
-		if _, err := tx.Exec(`INSERT INTO nodes(id, org_id, owner_id, parent_id, kind, name, mime, size, created, updated) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-			id, org, people[f.Owner].ID, folders[f.Folder], "file", f.Name, f.Mime, len(body), ago(f.HoursAgo), ago(f.HoursAgo)); err != nil {
-			return nil, err
-		}
-		written[s.filePath(id)] = body
-	}
-	for _, b := range seed.Blobs {
-		body := demoAsset(b.Asset)
-		if _, err := tx.Exec(`INSERT INTO blobs(id, org_id, owner_id, name, mime, size, created) VALUES(?,?,?,?,?,?,?)`,
-			b.ID, org, people[b.Owner].ID, b.Name, b.Mime, len(body), at.Unix()); err != nil {
-			return nil, err
-		}
-		written[filepath.Join(s.cfg.DataDir, "blobs", b.ID)] = body
-	}
-	for _, d := range seed.Docs {
-		id, state := newID(14), demoAsset(d.Asset)
-		if d.Kind != "sheet" {
-			if state, err = demoPersonalise(state, people, at); err != nil {
-				return nil, err
-			}
-		}
-		if _, err := tx.Exec(`INSERT INTO docs(id, org_id, owner_id, kind, title, folder_id, access, created, updated, snap, snap_seq, seq) VALUES(?,?,?,?,?,?,?,?,?,?,1,1)`,
-			id, org, people[d.Owner].ID, d.Kind, d.Title, folders[d.Folder], access(d.Access), ago(d.HoursAgo), ago(d.HoursAgo), state); err != nil {
-			return nil, err
-		}
-		for _, sh := range d.Shares {
-			if _, err := tx.Exec(`INSERT INTO doc_shares(doc_id, user_id, role) VALUES(?,?,?)`, id, people[sh.User].ID, sh.Role); err != nil {
-				return nil, err
-			}
-		}
-	}
-	rooms := map[string]string{}
-	for _, m := range seed.Meetings {
-		rooms[m.Key] = newMeetCode()
-		if _, err := tx.Exec(`INSERT INTO meetings(code, org_id, owner_id, title, created) VALUES(?,?,?,?,?)`, rooms[m.Key], org, people[m.Owner].ID, m.Title, at.Unix()); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return err
 	}
-
 	s.hub.evict(docs)
 	for _, id := range files {
 		os.Remove(s.filePath(id))
@@ -449,15 +512,108 @@ func (s *Server) demoContent(seed *demoSeed, people map[string]*User, at time.Ti
 	for _, d := range domains {
 		s.mailDeleteDomain(d)
 	}
-	for path, body := range written {
-		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-			return nil, err
+	return nil
+}
+
+// seedContent writes the story's folders, files, pictures, documents and
+// meeting rooms.
+func (s *Server) seedContent(run *seedRun) error {
+	seed, people, org := run.seed, run.people, run.org
+	ago := func(hours int64) int64 { return run.at.Unix() - hours*3600 }
+	tx, err := s.w.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// What was made is recorded once the transaction is in: the database
+	// has one writer, which the transaction holds until then.
+	var made [][2]string
+	keep := func(kind, id string) { made = append(made, [2]string{kind, id}) }
+
+	folders := map[string]string{}
+	for _, f := range seed.Folders {
+		id, link := newID(14), ""
+		if f.Link {
+			link = newToken()
 		}
-		if err := os.WriteFile(path, body, 0o640); err != nil {
-			return nil, err
+		folders[f.Key] = id
+		if _, err := tx.Exec(`INSERT INTO nodes(id, org_id, owner_id, parent_id, kind, name, access, link, created, updated) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			id, org, people[f.Owner].ID, folders[f.Parent], "folder", f.Name, access(f.Access), link, ago(f.HoursAgo), ago(f.HoursAgo)); err != nil {
+			return err
+		}
+		keep("node", id)
+	}
+	written := map[string][]byte{} // path -> content, written once the rows are in
+	for _, f := range seed.Files {
+		id, body := newID(14), demoAsset(f.Asset)
+		if _, err := tx.Exec(`INSERT INTO nodes(id, org_id, owner_id, parent_id, kind, name, mime, size, created, updated) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			id, org, people[f.Owner].ID, folders[f.Folder], "file", f.Name, f.Mime, len(body), ago(f.HoursAgo), ago(f.HoursAgo)); err != nil {
+			return err
+		}
+		keep("node", id)
+		written[s.filePath(id)] = body
+	}
+	// Pictures in documents are referred to by id inside the documents. The
+	// demo keeps the seed's ids; anywhere else they get new ids of the same
+	// length, swapped into the documents like the people's (personalise).
+	run.blobs = map[string]string{}
+	for _, b := range seed.Blobs {
+		id := b.ID
+		if run.example {
+			id = newID(len(b.ID))
+		}
+		run.blobs[b.ID] = id
+		body := demoAsset(b.Asset)
+		if _, err := tx.Exec(`INSERT INTO blobs(id, org_id, owner_id, name, mime, size, created) VALUES(?,?,?,?,?,?,?)`,
+			id, org, people[b.Owner].ID, b.Name, b.Mime, len(body), run.at.Unix()); err != nil {
+			return err
+		}
+		keep("blob", id)
+		written[filepath.Join(s.cfg.DataDir, "blobs", id)] = body
+	}
+	for _, d := range seed.Docs {
+		id, state := newID(14), demoAsset(d.Asset)
+		if d.Kind != "sheet" {
+			if state, err = personalise(state, people, run.blobs, run.at); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(`INSERT INTO docs(id, org_id, owner_id, kind, title, folder_id, access, created, updated, snap, snap_seq, seq) VALUES(?,?,?,?,?,?,?,?,?,?,1,1)`,
+			id, org, people[d.Owner].ID, d.Kind, d.Title, folders[d.Folder], access(d.Access), ago(d.HoursAgo), ago(d.HoursAgo), state); err != nil {
+			return err
+		}
+		keep("doc", id)
+		for _, sh := range d.Shares {
+			if _, err := tx.Exec(`INSERT INTO doc_shares(doc_id, user_id, role) VALUES(?,?,?)`, id, people[sh.User].ID, sh.Role); err != nil {
+				return err
+			}
 		}
 	}
-	return rooms, nil
+	run.rooms = map[string]string{}
+	for _, m := range seed.Meetings {
+		run.rooms[m.Key] = newMeetCode()
+		if _, err := tx.Exec(`INSERT INTO meetings(code, org_id, owner_id, title, created) VALUES(?,?,?,?,?)`, run.rooms[m.Key], org, people[m.Owner].ID, m.Title, run.at.Unix()); err != nil {
+			return err
+		}
+		keep("meeting", run.rooms[m.Key])
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	for _, m := range made {
+		if err := run.made(m[0], m[1], ""); err != nil {
+			return err
+		}
+	}
+	for path, body := range written {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, body, 0o640); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func access(v string) string {
@@ -475,13 +631,22 @@ const demoTimeBase = 8e15
 
 func demoPerson(key string) string { return (("@" + key) + strings.Repeat("@", 12))[:12] }
 
-func demoPersonalise(state []byte, people map[string]*User, at time.Time) ([]byte, error) {
+// personalise swaps the stand-ins in a document's state for the real
+// people, pictures and times. Every swap keeps the length, so the encoding
+// stays valid.
+func personalise(state []byte, people map[string]*User, blobs map[string]string, at time.Time) ([]byte, error) {
 	out := bytes.Clone(state)
 	for key, u := range people {
 		if len(u.ID) != 12 {
 			return nil, errf("demo: %s has an id of unexpected length", u.Email)
 		}
 		out = bytes.ReplaceAll(out, []byte(demoPerson(key)), []byte(u.ID))
+	}
+	for from, to := range blobs {
+		if len(from) != len(to) {
+			return nil, errf("demo: picture %s was given an id of another length", from)
+		}
+		out = bytes.ReplaceAll(out, []byte(from), []byte(to))
 	}
 	for i := 0; i+9 <= len(out); i++ {
 		if out[i] != 123 {
@@ -499,62 +664,77 @@ func demoPersonalise(state []byte, people map[string]*User, at time.Time) ([]byt
 
 // --- mail, calendar and contacts -------------------------------------------
 
-// demoGroups replaces the organisation's groups with the seed's. A group's
-// mailbox goes with it, so the seed's groups start empty, with only the
-// seed's members.
-func (s *Server) demoGroups(ctx context.Context, seed *demoSeed, people map[string]*User) (map[string]*Group, error) {
-	org := s.demo.org
-	for _, g := range s.orgGroups(org, nil) {
-		if err := s.groupDeleteMail(ctx, &g); err != nil {
-			return nil, err
-		}
-		if _, err := s.w.Exec(`DELETE FROM mail_groups WHERE id = ? AND org_id = ?`, g.ID, org); err != nil {
-			return nil, err
-		}
-	}
-	groups := map[string]*Group{}
-	for _, sg := range seed.Groups {
-		email := sg.Login + "@" + s.cfg.MailDomain
-		if s.addressTaken(email) {
-			return nil, errf("%s belongs to another organisation", email)
-		}
-		mailID, err := s.groupCreateMail(ctx, sg.Login, s.cfg.MailDomain, sg.Name)
+// seedGroups makes the seed's groups, with the seed's members.
+func (s *Server) seedGroups(ctx context.Context, run *seedRun) error {
+	run.groups = map[string]*Group{}
+	for _, sg := range run.seed.Groups {
+		login, err := s.seedLogin(run, sg.Login)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		g := &Group{ID: newID(12), orgID: org, Email: email, Name: sg.Name, Description: sg.Description, Posting: sg.Posting, mailID: mailID}
-		if _, err := s.w.Exec(`INSERT INTO mail_groups(id, org_id, email, name, description, posting, mail_id, created) VALUES(?,?,?,?,?,?,?,?)`,
-			g.ID, org, g.Email, g.Name, g.Description, g.Posting, g.mailID, now()); err != nil {
-			return nil, err
+		email := login + "@" + run.domain
+		mailID, err := s.groupCreateMail(ctx, login, run.domain, sg.Name)
+		if err != nil {
+			return err
+		}
+		g := &Group{ID: newID(12), orgID: run.org, Email: email, Name: sg.Name, Description: run.text(sg.Description), Posting: sg.Posting, mailID: mailID}
+		if _, err := s.w.Exec(`INSERT INTO mail_groups(id, org_id, email, name, description, posting, mail_id, created, example) VALUES(?,?,?,?,?,?,?,?,?)`,
+			g.ID, run.org, g.Email, g.Name, g.Description, g.Posting, g.mailID, now(), run.example); err != nil {
+			return err
+		}
+		if err := run.made("group", g.ID, ""); err != nil {
+			return err
 		}
 		for _, m := range sg.Members {
-			u := people[m[0]]
+			u := run.people[m[0]]
 			if err := s.groupAccess(ctx, g, u, m[1]); err != nil {
-				return nil, err
+				return err
 			}
 			if _, err := s.w.Exec(`INSERT INTO mail_group_members(group_id, user_id, role) VALUES(?,?,?)`, g.ID, u.ID, m[1]); err != nil {
-				return nil, err
+				return err
 			}
 			g.Members = append(g.Members, GroupMember{u.ID, m[1]})
 		}
 		if g.Posting != "anyone" {
 			if err := s.groupPolicy(ctx, g); err != nil {
-				return nil, err
+				return err
 			}
 		}
-		groups[sg.Key] = g
+		run.groups[sg.Key] = g
 	}
-	return groups, nil
+	return nil
 }
 
-// demoGroupMail fills a group's mailbox from the seed, through the account of
+// seedLogin is the part before the @ for one of the story's addresses. In
+// the demo it is the seed's, which must be free; in a new organisation an
+// address already taken (the founder may have chosen "ada") gets a suffix.
+func (s *Server) seedLogin(run *seedRun, login string) (string, error) {
+	if !run.example {
+		if s.addressTaken(login + "@" + run.domain) {
+			return "", errf("%s@%s belongs to another organisation", login, run.domain)
+		}
+		return login, nil
+	}
+	for i := 0; i < 20; i++ {
+		try := login
+		if i > 0 {
+			try = login + "-" + itoa(i+1)
+		}
+		if !s.addressTaken(try + "@" + run.domain) {
+			return try, nil
+		}
+	}
+	return "", errf("no free address for %s on %s", login, run.domain)
+}
+
+// seedGroupMail fills a group's mailbox from the seed, through the account of
 // a member who may write in it.
-func (s *Server) demoGroupMail(ctx context.Context, seed *demoSeed, people map[string]*User, groups map[string]*Group, key string, at time.Time) error {
-	g := groups[key]
+func (s *Server) seedGroupMail(ctx context.Context, run *seedRun, key string) error {
+	g := run.groups[key]
 	var u *User
-	for _, p := range seed.People {
-		if r := g.roleOf(people[p.Key].ID); u == nil && (r == "user" || r == "admin") {
-			u = people[p.Key]
+	for _, m := range g.Members {
+		if u == nil && (m.Role == "user" || m.Role == "admin") {
+			u = s.userByID(m.ID)
 		}
 	}
 	if u == nil {
@@ -572,18 +752,17 @@ func (s *Server) demoGroupMail(ctx context.Context, seed *demoSeed, people map[s
 	for _, b := range boxes.List {
 		role[b.Role] = b.ID
 	}
-	loc, err := time.LoadLocation(seed.Zone)
-	if err != nil {
-		return err
-	}
-	return s.demoMail(ctx, seed, people, groups, key, u, g.mailID, role, loc, at)
+	_, err = s.seedMail(ctx, run, key, u, g.mailID, role)
+	return err
 }
 
-// demoGroupware empties one person's mailbox, calendars and address books in
-// the mail engine and fills them from the seed. It works through that
-// person's own account only.
-func (s *Server) demoGroupware(ctx context.Context, seed *demoSeed, people map[string]*User, groups map[string]*Group, key string, rooms map[string]string, at time.Time) error {
-	u := people[key]
+// seedGroupware fills one person's mailbox, calendar and address book from
+// the seed, through that person's own account only. In the demo it first
+// empties them; a new organisation's are empty already, and what is made in
+// the account of the person who signed up is recorded, so it can be removed
+// again without touching anything of theirs.
+func (s *Server) seedGroupware(ctx context.Context, run *seedRun, key string) error {
+	u := run.people[key]
 	call := func(calls ...jmapCall) ([]jmapResult, error) { return s.jmapAs(ctx, u, jmapUsing, calls...) }
 	type list struct {
 		List []struct {
@@ -635,33 +814,8 @@ func (s *Server) demoGroupware(ctx context.Context, seed *demoSeed, people map[s
 	if role["inbox"] == "" || calendar == "" || book == "" {
 		return errf("demo: the mailbox of %s is missing its inbox, calendar or address book", u.Email)
 	}
-	if _, err := call(
-		jmapCall{"Mailbox/set", map[string]any{"accountId": u.MailID, "destroy": folders, "onDestroyRemoveEmails": true}},
-		jmapCall{"CalendarEvent/set", map[string]any{"accountId": u.MailID, "destroy": events.IDs, "sendSchedulingMessages": false}},
-		jmapCall{"Calendar/set", map[string]any{"accountId": u.MailID, "destroy": extraCals, "onDestroyRemoveEvents": true,
-			"update": map[string]any{calendar: map[string]any{"name": u.Name}}}},
-		jmapCall{"ContactCard/set", map[string]any{"accountId": u.MailID, "destroy": cards.IDs}},
-		jmapCall{"AddressBook/set", map[string]any{"accountId": u.MailID, "destroy": extraBooks, "onDestroyRemoveContents": true,
-			"update": map[string]any{book: map[string]any{"name": "My contacts"}}}},
-		jmapCall{"VacationResponse/set", map[string]any{"accountId": u.MailID, "update": map[string]any{"singleton": map[string]any{"isEnabled": false}}}},
-	); err != nil {
-		return err
-	}
-	// Mail goes in rounds: a query answers with a limited number of ids.
-	for round := 0; ; round++ {
-		res, err := call(jmapCall{"Email/query", map[string]any{"accountId": u.MailID, "limit": 500}})
-		if err != nil {
-			return err
-		}
-		var q queryResult
-		json.Unmarshal(res[0].Args, &q)
-		if len(q.IDs) == 0 {
-			break
-		}
-		if round == 100 {
-			return errf("demo: the mailbox of %s does not empty", u.Email)
-		}
-		if _, err := call(jmapCall{"Email/set", map[string]any{"accountId": u.MailID, "destroy": q.IDs}}); err != nil {
+	if !run.example {
+		if err := s.emptyGroupware(ctx, u, folders, events.IDs, extraCals, calendar, cards.IDs, extraBooks, book); err != nil {
 			return err
 		}
 	}
@@ -677,21 +831,18 @@ func (s *Server) demoGroupware(ctx context.Context, seed *demoSeed, people map[s
 		}
 	}
 
-	loc, err := time.LoadLocation(seed.Zone)
+	mails, err := s.seedMail(ctx, run, key, u, u.MailID, role)
 	if err != nil {
 		return err
 	}
-	if err := s.demoMail(ctx, seed, people, groups, key, u, u.MailID, role, loc, at); err != nil {
-		return err
-	}
 	create := map[string]any{}
-	for i, e := range seed.Events {
+	for i, e := range run.seed.Events {
 		if e.Owner == key || slices.Contains(e.Guests, key) {
-			create[itoa(i+1)] = s.eventJSON(e, people, rooms, calendar, loc, at)
+			create[itoa(i+1)] = s.eventJSON(run, e, calendar)
 		}
 	}
 	cardsNew := map[string]any{}
-	for i, c := range seed.Contacts {
+	for i, c := range run.seed.Contacts {
 		if c.Owner == key {
 			cardsNew[itoa(i+1)] = cardJSON(c, book)
 		}
@@ -703,14 +854,63 @@ func (s *Server) demoGroupware(ctx context.Context, seed *demoSeed, people map[s
 	if err != nil {
 		return err
 	}
+	made := map[string][]string{"mail": mails}
 	for i, r := range res {
 		var sr setResult
 		json.Unmarshal(r.Args, &sr)
+		kind := []string{"event", "contact"}[i]
 		if len(sr.NotCreated) > 0 {
-			return errf("demo: %s for %s refused: %s", []string{"events", "contacts"}[i], u.Email, r.Args)
+			return errf("demo: %ss for %s refused: %s", kind, u.Email, r.Args)
+		}
+		for _, c := range sr.Created {
+			made[kind] = append(made[kind], c.ID)
+		}
+	}
+	if key == seedMe {
+		for kind, ids := range made {
+			for _, id := range ids {
+				if err := run.made(kind, id, u.ID); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
+}
+
+// emptyGroupware empties a demo person's mailbox, calendars and address books.
+func (s *Server) emptyGroupware(ctx context.Context, u *User, folders, events, extraCals []string, calendar string, cards, extraBooks []string, book string) error {
+	call := func(calls ...jmapCall) ([]jmapResult, error) { return s.jmapAs(ctx, u, jmapUsing, calls...) }
+	if _, err := call(
+		jmapCall{"Mailbox/set", map[string]any{"accountId": u.MailID, "destroy": folders, "onDestroyRemoveEmails": true}},
+		jmapCall{"CalendarEvent/set", map[string]any{"accountId": u.MailID, "destroy": events, "sendSchedulingMessages": false}},
+		jmapCall{"Calendar/set", map[string]any{"accountId": u.MailID, "destroy": extraCals, "onDestroyRemoveEvents": true,
+			"update": map[string]any{calendar: map[string]any{"name": u.Name}}}},
+		jmapCall{"ContactCard/set", map[string]any{"accountId": u.MailID, "destroy": cards}},
+		jmapCall{"AddressBook/set", map[string]any{"accountId": u.MailID, "destroy": extraBooks, "onDestroyRemoveContents": true,
+			"update": map[string]any{book: map[string]any{"name": "My contacts"}}}},
+		jmapCall{"VacationResponse/set", map[string]any{"accountId": u.MailID, "update": map[string]any{"singleton": map[string]any{"isEnabled": false}}}},
+	); err != nil {
+		return err
+	}
+	// Mail goes in rounds: a query answers with a limited number of ids.
+	for round := 0; ; round++ {
+		res, err := call(jmapCall{"Email/query", map[string]any{"accountId": u.MailID, "limit": 500}})
+		if err != nil {
+			return err
+		}
+		var q queryResult
+		json.Unmarshal(res[0].Args, &q)
+		if len(q.IDs) == 0 {
+			return nil
+		}
+		if round == 100 {
+			return errf("demo: the mailbox of %s does not empty", u.Email)
+		}
+		if _, err := call(jmapCall{"Email/set", map[string]any{"accountId": u.MailID, "destroy": q.IDs}}); err != nil {
+			return err
+		}
+	}
 }
 
 // seedToday is the start of the reset's day where the story takes place.
@@ -735,10 +935,11 @@ func seedClock(day time.Time, clock string) time.Time {
 // eventJSON is one seed event as JSCalendar, the way the app writes events
 // (lib/calendar.js, apps/calendar-event.jsx). Guests have already accepted,
 // and each keeps their own copy, so nothing needs to be sent to anyone.
-func (s *Server) eventJSON(e seedEvent, people map[string]*User, rooms map[string]string, calendar string, loc *time.Location, at time.Time) map[string]any {
-	day := seedWeekday(at, loc, e.Week, e.Day)
+func (s *Server) eventJSON(run *seedRun, e seedEvent, calendar string) map[string]any {
+	people, loc := run.people, run.loc
+	day := seedWeekday(run.at, loc, e.Week, e.Day)
 	ev := map[string]any{
-		"@type": "Event", "uid": newID(20) + "@" + s.cfg.MailDomain, "calendarIds": map[string]bool{calendar: true}, "title": e.Title,
+		"@type": "Event", "uid": newID(20) + "@" + run.domain, "calendarIds": map[string]bool{calendar: true}, "title": run.text(e.Title),
 	}
 	if e.AllDay {
 		ev["start"], ev["duration"], ev["showWithoutTime"] = day.Format("2006-01-02T15:04:05"), "P1D", true
@@ -761,13 +962,13 @@ func (s *Server) eventJSON(e seedEvent, people map[string]*User, rooms map[strin
 		ev["recurrenceRule"] = map[string]any{"@type": "RecurrenceRule", "frequency": "weekly", "byDay": days}
 	}
 	if e.Place != "" {
-		ev["locations"] = map[string]any{"l1": map[string]string{"@type": "Location", "name": e.Place}}
+		ev["locations"] = map[string]any{"l1": map[string]string{"@type": "Location", "name": run.text(e.Place)}}
 	}
 	if e.Meeting != "" {
-		ev["virtualLocations"] = map[string]any{"v1": map[string]string{"@type": "VirtualLocation", "name": "Open Suite meeting", "uri": "https://" + s.cfg.Domain + "/meet/" + rooms[e.Meeting]}}
+		ev["virtualLocations"] = map[string]any{"v1": map[string]string{"@type": "VirtualLocation", "name": "Open Suite meeting", "uri": "https://" + s.cfg.Domain + "/meet/" + run.rooms[e.Meeting]}}
 	}
 	if e.Description != "" {
-		ev["description"] = e.Description
+		ev["description"] = run.text(e.Description)
 	}
 	if len(e.Guests) > 0 {
 		owner := people[e.Owner]
@@ -800,10 +1001,12 @@ func cardJSON(c seedContact, book string) map[string]any {
 	return card
 }
 
-// demoMail imports the seed's messages into one mailbox, the person's or the
+// seedMail imports the seed's messages into one mailbox, the person's or the
 // group's named by key, through the account of u: what it sent into Sent,
-// what it received into the Inbox. Imported, never sent.
-func (s *Server) demoMail(ctx context.Context, seed *demoSeed, people map[string]*User, groups map[string]*Group, key string, u *User, account string, role map[string]string, loc *time.Location, at time.Time) error {
+// what it received into the Inbox. Imported, never sent. It returns the
+// messages' ids.
+func (s *Server) seedMail(ctx context.Context, run *seedRun, key string, u *User, account string, role map[string]string) ([]string, error) {
+	people, groups := run.people, run.groups
 	addr := func(v string) (*mail.Address, error) {
 		if p := people[v]; p != nil {
 			return &mail.Address{Name: p.Name, Address: p.Email}, nil
@@ -816,14 +1019,14 @@ func (s *Server) demoMail(ctx context.Context, seed *demoSeed, people map[string
 	// Message ids are made new at each reset and shared by both copies, so
 	// replies thread the same way in every mailbox.
 	ids, refs := map[string]string{}, map[string]string{}
-	for _, m := range seed.Mail {
-		ids[m.Key] = "<" + m.Key + "." + at.Format("20060102") + "@" + s.cfg.MailDomain + ">"
+	for _, m := range run.seed.Mail {
+		ids[m.Key] = "<" + m.Key + "." + run.at.Format("20060102") + "." + run.org + "@" + run.domain + ">"
 		if m.ReplyTo != "" {
 			refs[m.Key] = strings.TrimSpace(refs[m.ReplyTo] + " " + ids[m.ReplyTo])
 		}
 	}
 	imports := map[string]any{}
-	for i, m := range seed.Mail {
+	for i, m := range run.seed.Mail {
 		var box string
 		seen := true
 		switch {
@@ -836,22 +1039,22 @@ func (s *Server) demoMail(ctx context.Context, seed *demoSeed, people map[string
 		}
 		from, err := addr(m.From)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var to []string
 		for _, t := range m.To {
 			a, err := addr(t)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			to = append(to, a.String())
 		}
-		sent := seedClock(seedToday(at, loc).AddDate(0, 0, m.Day), m.Time)
+		sent := seedClock(seedToday(run.at, run.loc).AddDate(0, 0, m.Day), m.Time)
 		var raw bytes.Buffer
 		head := func(k, v string) { raw.WriteString(k + ": " + v + "\r\n") }
 		head("From", from.String())
 		head("To", strings.Join(to, ", "))
-		head("Subject", mime.QEncoding.Encode("utf-8", m.Subject))
+		head("Subject", mime.QEncoding.Encode("utf-8", run.text(m.Subject)))
 		head("Date", sent.Format(time.RFC1123Z))
 		head("Message-ID", ids[m.Key])
 		if m.ReplyTo != "" {
@@ -861,10 +1064,10 @@ func (s *Server) demoMail(ctx context.Context, seed *demoSeed, people map[string
 		head("MIME-Version", "1.0")
 		head("Content-Type", "text/plain; charset=utf-8")
 		head("Content-Transfer-Encoding", "8bit")
-		raw.WriteString("\r\n" + strings.ReplaceAll(m.Body, "\n", "\r\n") + "\r\n")
+		raw.WriteString("\r\n" + strings.ReplaceAll(run.text(m.Body), "\n", "\r\n") + "\r\n")
 		blob, err := s.mailUpload(ctx, u, account, raw.Bytes())
 		if err != nil {
-			return err
+			return nil, err
 		}
 		keywords := map[string]bool{}
 		if seen {
@@ -879,20 +1082,22 @@ func (s *Server) demoMail(ctx context.Context, seed *demoSeed, people map[string
 		imports[itoa(i+1)] = map[string]any{"blobId": blob, "mailboxIds": map[string]bool{box: true}, "keywords": keywords, "receivedAt": sent.UTC().Format(time.RFC3339)}
 	}
 	if len(imports) == 0 {
-		return nil
+		return nil, nil
 	}
 	res, err := s.jmapAs(ctx, u, jmapUsing, jmapCall{"Email/import", map[string]any{"accountId": account, "emails": imports}})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	var r struct {
-		NotCreated map[string]json.RawMessage `json:"notCreated"`
+	var sr setResult
+	json.Unmarshal(res[0].Args, &sr)
+	if len(sr.NotCreated) > 0 {
+		return nil, errf("demo: mail for %s refused: %s", key, res[0].Args)
 	}
-	json.Unmarshal(res[0].Args, &r)
-	if len(r.NotCreated) > 0 {
-		return errf("demo: mail for %s refused: %s", key, res[0].Args)
+	var made []string
+	for _, c := range sr.Created {
+		made = append(made, c.ID)
 	}
-	return nil
+	return made, nil
 }
 
 // mailUpload stores a raw message in a mailbox u may write in, for
@@ -920,17 +1125,25 @@ func (s *Server) mailUpload(ctx context.Context, u *User, account string, body [
 
 // --- chat -------------------------------------------------------------------
 
-// demoChat takes the seed's people out of every conversation they are in and
-// starts the seed's conversations afresh. Each person gets a new chat session
-// for this; their browsers pick it up through /api/chat/token.
-func (s *Server) demoChat(ctx context.Context, seed *demoSeed, people map[string]*User) error {
+// seedChat starts the seed's conversations. In the demo it first takes the
+// seed's people out of every conversation they are in, each with a new chat
+// session (their browsers pick it up through /api/chat/token).
+func (s *Server) seedChat(ctx context.Context, run *seedRun) error {
 	const quiet = `{"room":{"timeline":{"limit":0},"state":{"types":[]},"ephemeral":{"types":[]},"account_data":{"types":[]}},"presence":{"types":[]},"account_data":{"types":[]}}`
-	for _, p := range seed.People {
-		u := people[p.Key]
+	for key, u := range run.people {
+		if run.example {
+			if u.MxToken == "" {
+				s.chatEnsure(ctx, u)
+			}
+			if u.MxToken == "" {
+				return errf("demo: no chat session for %s", u.Email)
+			}
+			continue
+		}
 		u.MxToken = ""
 		s.chatEnsure(ctx, u)
 		if u.MxToken == "" {
-			return errf("demo: no chat session for %s", u.Email)
+			return errf("demo: no chat session for %s (%s)", u.Email, key)
 		}
 		var sync struct {
 			Rooms struct{ Join, Invite map[string]json.RawMessage }
@@ -948,27 +1161,32 @@ func (s *Server) demoChat(ctx context.Context, seed *demoSeed, people map[string
 			}
 		}
 	}
-	for _, c := range seed.Chat {
+	for _, c := range run.seed.Chat {
 		var invite []string
 		for _, m := range c.Members {
-			invite = append(invite, s.mxid(people[m].MxLocal))
+			invite = append(invite, s.mxid(run.people[m].MxLocal))
 		}
 		var made struct {
 			RoomID string `json:"room_id"`
 		}
-		if _, err := s.matrix(ctx, "POST", "/_matrix/client/v3/createRoom", people[c.Owner].MxToken,
-			map[string]any{"preset": "private_chat", "name": c.Name, "invite": invite}, &made); err != nil {
+		if _, err := s.matrix(ctx, "POST", "/_matrix/client/v3/createRoom", run.people[c.Owner].MxToken,
+			map[string]any{"preset": "private_chat", "name": run.text(c.Name), "invite": invite}, &made); err != nil {
 			return err
+		}
+		if slices.Contains(c.Members, seedMe) {
+			if err := run.made("room", made.RoomID, run.people[seedMe].ID); err != nil {
+				return err
+			}
 		}
 		room := "/_matrix/client/v3/rooms/" + url.PathEscape(made.RoomID)
 		for _, m := range c.Members {
-			if _, err := s.matrix(ctx, "POST", "/_matrix/client/v3/join/"+url.PathEscape(made.RoomID), people[m].MxToken, map[string]any{}, nil); err != nil {
+			if _, err := s.matrix(ctx, "POST", "/_matrix/client/v3/join/"+url.PathEscape(made.RoomID), run.people[m].MxToken, map[string]any{}, nil); err != nil {
 				return err
 			}
 		}
 		for i, msg := range c.Messages {
 			path := room + "/send/m.room.message/demo" + itoa(i+1) + "-" + newID(8)
-			if _, err := s.matrix(ctx, "PUT", path, people[msg[0]].MxToken, map[string]string{"msgtype": "m.text", "body": msg[1]}, nil); err != nil {
+			if _, err := s.matrix(ctx, "PUT", path, run.people[msg[0]].MxToken, map[string]string{"msgtype": "m.text", "body": run.text(msg[1])}, nil); err != nil {
 				return err
 			}
 		}

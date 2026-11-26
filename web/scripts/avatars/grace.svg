@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#dcefe9"/>
+  <circle cx="90" cy="430" r="140" fill="#cbe6de"/>
+  <!-- jacket -->
+  <path d="M90 512 C96 420 160 378 256 378 C352 378 416 420 422 512 Z" fill="#23365c"/>
+  <path d="M222 380 L256 450 L290 380 C278 377 266 376 256 376 C246 376 234 377 222 380 Z" fill="#f4f1ea"/>
+  <path d="M236 384 L256 420 L276 384" fill="#2f4a7a"/>
+  <path d="M174 400 L222 380 L248 470 Z" fill="#1c2c4c"/>
+  <path d="M338 400 L290 380 L264 470 Z" fill="#1c2c4c"/>
+  <circle cx="226" cy="470" r="6" fill="#d8b552"/>
+  <circle cx="286" cy="470" r="6" fill="#d8b552"/>
+  <rect x="150" y="440" width="44" height="8" rx="3" fill="#d8b552"/>
+  <rect x="150" y="454" width="44" height="8" rx="3" fill="#d8b552"/>
+  <!-- neck -->
+  <path d="M230 318 L282 318 L286 382 C270 392 242 392 226 382 Z" fill="#efc7a6"/>
+  <!-- face -->
+  <ellipse cx="256" cy="250" rx="80" ry="90" fill="#f5d0b0"/>
+  <!-- short curly grey hair -->
+  <g fill="#d6d6dc">
+    <circle cx="190" cy="196" r="34"/>
+    <circle cx="226" cy="168" r="36"/>
+    <circle cx="268" cy="160" r="38"/>
+    <circle cx="308" cy="176" r="34"/>
+    <circle cx="330" cy="214" r="28"/>
+    <circle cx="180" cy="236" r="24"/>
+    <circle cx="334" cy="250" r="20"/>
+    <circle cx="176" cy="268" r="16"/>
+  </g>
+  <g fill="none" stroke="#b9b9c3" stroke-width="4" stroke-linecap="round">
+    <path d="M206 180 C214 172 224 172 230 180"/>
+    <path d="M254 160 C262 152 274 152 280 160"/>
+    <path d="M298 182 C306 176 316 178 320 186"/>
+  </g>
+  <!-- glasses -->
+  <g fill="none" stroke="#3d3d48" stroke-width="5">
+    <rect x="200" y="230" width="46" height="34" rx="12"/>
+    <rect x="266" y="230" width="46" height="34" rx="12"/>
+    <path d="M246 244 C252 240 260 240 266 244"/>
+  </g>
+  <ellipse cx="223" cy="248" rx="6" ry="7" fill="#2c2a2a"/>
+  <ellipse cx="289" cy="248" rx="6" ry="7" fill="#2c2a2a"/>
+  <path d="M256 262 C252 276 250 284 260 286" fill="none" stroke="#d69c7c" stroke-width="4" stroke-linecap="round"/>
+  <path d="M230 302 C244 316 268 316 282 302" fill="none" stroke="#a9504a" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="206" cy="290" r="12" fill="#f0b19c" opacity=".55"/>
+  <circle cx="306" cy="290" r="12" fill="#f0b19c" opacity=".55"/>
+</svg>

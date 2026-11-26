@@ -131,12 +131,16 @@ kbd { font: 11px var(--mono); color: var(--faint); margin-left: auto; padding-le
   display: flex; align-items: center; padding: 0 11px; border: 1px solid var(--line-strong); border-left: 0;
   border-radius: 0 var(--radius) var(--radius) 0; background: var(--sunken); color: var(--muted); white-space: nowrap;
 }
+/* A long domain gives way to what is typed, and is cut short at its end. */
+.input-group .input { min-width: 96px; }
+.input-group .suffix.shrink { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; line-height: 34px; }
 
 /* --- avatar, badges --------------------------------------------------- */
 .avatar {
   display: inline-grid; place-items: center; border-radius: 50%; color: #fff; font-weight: 650;
-  flex: none; letter-spacing: 0.01em; user-select: none;
+  flex: none; letter-spacing: 0.01em; user-select: none; position: relative; overflow: hidden;
 }
+.avatar-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .badge {
   display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px;
   background: var(--sunken); color: var(--ink-2); font-size: 12px; font-weight: 600;
@@ -281,6 +285,13 @@ table.table { width: 100%; border-collapse: collapse; }
 .auth-card h1 { font-size: 21px; }
 .auth-card .foot { text-align: center; color: var(--muted); font-size: 13px; }
 .form-error { padding: 9px 12px; border-radius: var(--radius); background: var(--danger-soft); color: var(--danger); font-weight: 550; font-size: 13px; }
+.start-choice { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.start-choice legend { font-size: 13px; font-weight: 600; margin-bottom: 6px; padding: 0; }
+.start-choice label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius); cursor: pointer; }
+.start-choice label.on { border-color: var(--accent); background: var(--accent-soft); }
+.start-choice input { margin-top: 3px; accent-color: var(--accent); }
+.start-choice label > span { display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
+.start-choice .muted { font-size: 12.5px; line-height: 1.45; }
 
 /* --- home ------------------------------------------------------------- */
 .quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 22px; }

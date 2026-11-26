@@ -1,13 +1,18 @@
 // The one component kit every part of the suite draws from.
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { X } from 'lucide-preact'
-import { toasts } from './lib/store.js'
+import { toasts, photoFor } from './lib/store.js'
 import { cx, initials, colorFor } from './lib/util.js'
 
-export function Avatar({ name, id, size = 32 }) {
+// A person's picture if they have one (id may be their member id, address
+// or chat id; email is for callers that know only the address), otherwise
+// their initials on their colour.
+export function Avatar({ name, id, email, size = 32 }) {
+  const photo = photoFor(id) || photoFor(email)
   return (
     <span class="avatar" style={{ width: size, height: size, fontSize: size * 0.4, background: colorFor(id || name) }} aria-hidden="true">
       {initials(name)}
+      {photo && <img class="avatar-photo" src={photo} alt="" loading="lazy" decoding="async" onError={(e) => { e.currentTarget.style.display = 'none' }} />}
     </span>
   )
 }
