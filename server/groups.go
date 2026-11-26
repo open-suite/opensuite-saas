@@ -537,12 +537,14 @@ func (s *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, u *Us
 		fail(w, 400, "Enter the group's name.")
 		return
 	}
-	if msg := validUsername(in.Username); msg != "" {
-		fail(w, 400, msg)
-		return
-	}
 	if in.Domain == "" {
 		in.Domain = s.cfg.MailDomain
+	}
+	// On its own domain an organisation needs exactly the reserved names
+	// (support@, info@, billing@) as shared inboxes.
+	if msg := validLocalPart(in.Username, in.Domain == s.cfg.MailDomain); msg != "" {
+		fail(w, 400, msg)
+		return
 	}
 	if !slices.Contains(s.mailDomainsFor(u.OrgID), in.Domain) {
 		fail(w, 400, "That domain isn't verified for mail yet.")

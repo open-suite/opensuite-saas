@@ -427,3 +427,20 @@ func TestGroupPlanLimit(t *testing.T) {
 		}
 	}
 }
+
+// Reserved names are refused on the installation's shared domain but are the
+// organisation's to use on its own verified domain.
+func TestGroupReservedNames(t *testing.T) {
+	o := newGroupOrg(t)
+	o.s.w.Exec(`INSERT INTO domains (domain, org_id, mail_ok, created) SELECT 'alpha.example', org_id, 1, 0 FROM users WHERE email = 'alice@office.test'`)
+	if code := o.alice.do("POST", "/api/v1/groups", map[string]string{"name": "Support", "username": "support"}, nil); code != 400 {
+		t.Errorf("support@ on the shared domain: %d, want 400", code)
+	}
+	var support struct{ Email string }
+	if code := o.alice.do("POST", "/api/v1/groups", map[string]string{"name": "Support", "username": "support", "domain": "alpha.example"}, &support); code != 200 || support.Email != "support@alpha.example" {
+		t.Errorf("support@ on own domain: %d %q, want 200", code, support.Email)
+	}
+	if code := o.alice.do("POST", "/api/admin/users", map[string]string{"name": "Info", "username": "info"}, nil); code != 400 {
+		t.Errorf("person named info on the shared domain: %d, want 400", code)
+	}
+}

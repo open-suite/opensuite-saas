@@ -224,8 +224,10 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   `os-read-<member id>` and `os-replied-<member id>` (with `$answered`). The
   API reports them as `readBy` and `repliedBy`. A user could set someone
   else's mark: like the comment role, a courtesy between colleagues.
-- **Addresses** of people and groups are one space (`addressTaken`), with
-  the same reserved names. Plans allow 5 (free) or 250 (team) groups.
+- **Addresses** of people and groups are one space (`addressTaken`).
+  Reserved names (`validLocalPart`) apply on the installation's shared mail
+  domain; on an organisation's own domain a group may be `support@`,
+  `info@` and so on. Plans allow 5 (free) or 250 (team) groups.
 - **Demo reset** deletes the demo organisation's groups and makes the
   seed's (`groups` in `demo/seed.json`), importing their mail through a
   member's account. The engine refuses to delete a group that still has

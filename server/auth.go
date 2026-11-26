@@ -152,11 +152,15 @@ func (s *Server) addressTaken(email string) bool {
 	return n > 0
 }
 
-func validUsername(name string) string {
+func validUsername(name string) string { return validLocalPart(name, true) }
+
+// validLocalPart checks the part of an address before the @. Reserved names
+// protect the installation's shared mail domain from impersonation.
+func validLocalPart(name string, sharedDomain bool) string {
 	if !usernameRe.MatchString(name) {
 		return "Use 3 to 32 letters, digits, dots or dashes."
 	}
-	if slices.Contains(reservedNames, name) {
+	if sharedDomain && slices.Contains(reservedNames, name) {
 		return "That address is reserved."
 	}
 	return ""
