@@ -283,7 +283,16 @@ const zip = (buf) => buf.subarray(0, 2).toString() === 'PK'
       assert.equal(moved.duration, 'PT1H')
       const busy = await api('POST', '/api/v1/calendar/freebusy', { people: [ADDR], from: new Date(start - 3600000).toISOString(), to: new Date(+start + 7200000).toISOString() })
       assert.ok(Object.values(busy.busy)[0]?.length > 0, 'busy while the event is on')
-      ok('calendar: event with a meeting link, repeating event unrolled, event changed, free/busy')
+      // An invitation to a colleague (mail inside the installation only),
+      // then its cancellation.
+      const colleague = (await api('GET', '/api/v1/people')).items.find((p) => p.email !== ADDR && p.status === 'active' && !p.agent)
+      if (colleague) {
+        const inv = await api('POST', '/api/v1/calendar/events', { title: 'API invitation ' + stamp, start: start.toISOString(), duration: 'PT30M', guests: [colleague.email] })
+        const guest = inv.guests.find((g) => g.email === colleague.email.toLowerCase())
+        assert.equal(guest?.status, 'needs-action')
+        await api('DELETE', '/api/v1/calendar/events/' + inv.id)
+      }
+      ok('calendar: event with a meeting link, repeating event unrolled, event changed, free/busy' + (colleague ? ', ' + colleague.name + ' invited and the invitation cancelled' : ''))
     }
 
     if (want('contacts')) {
