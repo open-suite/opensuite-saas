@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks'
-import { UserPlus, MoreHorizontal, KeyRound, Ban, Trash2, CircleCheck, Globe, Copy, RefreshCw, ShieldCheck, Check, X as XIcon } from 'lucide-preact'
+import { UserPlus, MoreHorizontal, KeyRound, Ban, Trash2, CircleCheck, Globe, Copy, RefreshCw, RotateCcw, ShieldCheck, Check, X as XIcon } from 'lucide-preact'
 import { boot, user, org, people, patchBoot, toast } from '../lib/store.js'
 import { parts, navigate } from '../lib/router.js'
 import { get, post, patch, del, refreshBoot } from '../lib/api.js'
@@ -262,28 +262,49 @@ function Organisation({ data }) {
 
 function Operator() {
   const [orgs, setOrgs] = useState(null)
+  const [resetting, setResetting] = useState(null) // the demo organisation, while asking
+  const [busy, setBusy] = useState(false)
   const load = () => get('/api/operator/orgs').then(setOrgs).catch((e) => toast(e.message, 'error'))
   useEffect(() => { load() }, [])
   const setPlan = async (o, plan) => {
     await patch('/api/operator/orgs/' + o.id, { plan }).catch((e) => toast(e.message, 'error'))
     load()
   }
+  const reset = async () => {
+    setBusy(true)
+    try {
+      await post('/api/operator/demo-reset')
+      toast(`${resetting.name} is back to its example content`)
+      refreshBoot()
+      load()
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+    setBusy(false)
+    setResetting(null)
+  }
   return (
     <div class="card">
       <table class="table">
-        <thead><tr><th>Organisation</th><th>People</th><th>Documents</th><th>Created</th><th>Plan</th></tr></thead>
+        <thead><tr><th>Organisation</th><th>People</th><th>Documents</th><th>Created</th><th>Plan</th><th /></tr></thead>
         <tbody>
           {(orgs || []).map((o) => (
             <tr key={o.id}>
-              <td style={{ fontWeight: 600 }}>{o.name}</td>
+              <td style={{ fontWeight: 600 }}>{o.name} {o.demo && <span class="badge badge-accent">Demo</span>}</td>
               <td>{o.users}</td>
               <td>{o.docs}</td>
               <td class="muted">{when(o.created * 1000)}</td>
               <td><select class="select" style={{ width: 110 }} value={o.plan} onChange={(e) => setPlan(o, e.target.value)}><option value="free">Free</option><option value="team">Team</option></select></td>
+              <td style={{ textAlign: 'right' }}>{o.demo && <Button icon={RotateCcw} onClick={() => setResetting(o)}>Reset</Button>}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      {resetting && (
+        <Modal title={`Reset ${resetting.name}?`} onClose={() => !busy && setResetting(null)} footer={<><Button disabled={busy} onClick={() => setResetting(null)}>Cancel</Button><Button kind="danger" busy={busy} onClick={reset}>Reset now</Button></>}>
+          <p>Everything its people have made is replaced by the example content: documents, files, mail, calendars, contacts, chats and meeting rooms. Anyone else added to it is removed. This happens every morning anyway.</p>
+        </Modal>
+      )}
     </div>
   )
 }

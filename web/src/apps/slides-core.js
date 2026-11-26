@@ -1,12 +1,8 @@
 // The presentation controller. A deck is a shared document held on the
 // device: it opens from local storage, every edit applies at once, and the
 // server relays and backs up. The view (slides.jsx) draws whatever this holds
-// and calls its methods; nothing here renders.
-//
-// Shape of the shared document:
-//   meta   : { theme, transition }
-//   slides : id -> { pos, layout, bg, notes (text), els: id -> element }
-//   element: { type: box|image|line, geometry, style, z, text (rich text) }
+// and calls its methods; nothing here renders. The document's shape is
+// described in slides-doc.js.
 // Slides and elements are keyed by id and ordered by a number (pos, z), so a
 // reorder is one small write that never disturbs what a colleague is typing.
 import * as Y from 'yjs'
@@ -18,73 +14,12 @@ import { api } from '../lib/api.js'
 import { DocSocket, fetchState } from '../lib/sync.js'
 import { findDoc, whenCreated, isFresh } from '../lib/docs.js'
 import { colorFor, newId } from '../lib/util.js'
-import { W, H, themeOf, slideColors, slideVars, layouts, bounds, outer, union, shifted, between, round, isLine, isShape, frameCss, textCss, textPad } from './slides-model.js'
-import { textJSON, textPlain, fillText, isBlank, forget, createTextEditor, formatAll, describeAll, rehearse as rehearseText, ySyncPluginKey, paragraphs } from './slides-text.js'
+import { W, H, themeOf, slideColors, slideVars, bounds, outer, union, shifted, between, round, isLine, isShape, frameCss, textCss, textPad } from './slides-model.js'
+import { textPlain, isBlank, forget, createTextEditor, formatAll, describeAll, rehearse as rehearseText, ySyncPluginKey, paragraphs } from './slides-text.js'
+import { SEED, readEl, elJSON, slideJSON, writeEl, writeSlide, layoutEls } from './slides-doc.js'
 
 const REMOTE = 'remote'
-const SEED = 'seed'
 export const LOCAL = 'local'
-
-// --- plain data <-> shared document ------------------------------------------
-
-export function readEl(m) {
-  const o = {}
-  m.forEach((v, k) => (o[k] = v))
-  return o
-}
-
-export function elJSON(m) {
-  const o = readEl(m)
-  if (o.type === 'box') o.text = textJSON(o.text)
-  return o
-}
-
-export function slideJSON(m) {
-  return {
-    layout: m.get('layout') || 'blank', bg: m.get('bg') || null, notes: m.get('notes')?.toString() || '',
-    els: [...m.get('els').values()].map(elJSON).sort((a, b) => (a.z || 0) - (b.z || 0)),
-  }
-}
-
-export function writeEl(els, data) {
-  const m = new Y.Map()
-  for (const [k, v] of Object.entries(data)) if (k !== 'text' && v !== undefined && v !== null) m.set(k, v)
-  if (data.type === 'box') m.set('text', new Y.XmlFragment())
-  els.set(data.id, m)
-  if (data.type === 'box') fillText(m.get('text'), data.text)
-  return m
-}
-
-export function writeSlide(slides, id, pos, data) {
-  const m = new Y.Map()
-  m.set('pos', pos)
-  m.set('layout', data.layout || 'blank')
-  if (data.bg) m.set('bg', data.bg)
-  m.set('notes', new Y.Text(data.notes || ''))
-  m.set('els', new Y.Map())
-  slides.set(id, m)
-  const els = m.get('els')
-  let z = 1
-  for (const e of data.els || []) writeEl(els, { ...e, id: e.id || newId(8), z: z++ })
-  return m
-}
-
-// The boxes a layout starts with.
-export function layoutEls(layout) {
-  return (layouts[layout] || layouts.blank).els.map((p) =>
-    p.type === 'image' ? { type: 'image', role: p.role, src: '', x: p.x, y: p.y, w: p.w, h: p.h, rot: 0 }
-      : { type: 'box', shape: 'none', role: p.role, slot: p.slot, x: p.x, y: p.y, w: p.w, h: p.h, rot: 0, valign: p.valign })
-}
-
-// buildDeck fills an empty document from plain data (a new deck, an import).
-export function buildDeck(ydoc, data) {
-  const slides = ydoc.getMap('slides'), meta = ydoc.getMap('meta')
-  ydoc.transact(() => {
-    meta.set('theme', data.theme || 'paper')
-    if (data.transition) meta.set('transition', data.transition)
-    data.slides.forEach((s, i) => writeSlide(slides, s.id || newId(10), i + 1, s))
-  }, SEED)
-}
 
 // --- decks kept in memory ---------------------------------------------------
 

@@ -1,0 +1,102 @@
+{
+  "org": "Analytical Engines",
+  "plan": "team",
+  "zone": "Europe/London",
+  "people": [
+    { "key": "ada", "login": "ada", "name": "Ada Lovelace", "role": "owner" },
+    { "key": "grace", "login": "grace.hopper", "name": "Grace Hopper", "role": "member" }
+  ],
+  "folders": [
+    { "key": "launch", "name": "Loom launch", "owner": "ada", "access": "org", "hoursAgo": 500 },
+    { "key": "press", "name": "Press kit", "parent": "launch", "owner": "ada", "link": true, "hoursAgo": 120 }
+  ],
+  "files": [
+    { "name": "Loom planner screenshot.png", "asset": "loom-planner.png", "mime": "image/png", "folder": "press", "owner": "ada", "hoursAgo": 119 },
+    { "name": "Loom logo.png", "asset": "loom-logo.png", "mime": "image/png", "folder": "press", "owner": "ada", "hoursAgo": 119 },
+    { "name": "Loom fact sheet.pdf", "asset": "loom-fact-sheet.pdf", "mime": "application/pdf", "folder": "press", "owner": "ada", "hoursAgo": 70 }
+  ],
+  "blobs": [
+    { "id": "demoplannerscreen0001", "name": "Loom planner screenshot.png", "asset": "loom-planner.png", "mime": "image/png", "owner": "ada" }
+  ],
+  "docs": [
+    { "kind": "doc", "title": "Loom 1.0 launch brief", "asset": "brief.bin", "owner": "ada", "folder": "launch", "hoursAgo": 3 },
+    { "kind": "doc", "title": "Launch stand-up notes", "asset": "notes.bin", "owner": "grace", "folder": "launch", "hoursAgo": 26 },
+    { "kind": "sheet", "title": "Launch budget", "asset": "budget.bin", "owner": "ada", "folder": "launch", "hoursAgo": 20 },
+    { "kind": "slides", "title": "Loom launch plan", "asset": "deck.bin", "owner": "ada", "folder": "launch", "hoursAgo": 50 },
+    { "kind": "doc", "title": "Loom 1.0 release checklist", "asset": "checklist.bin", "owner": "grace", "shares": [{ "user": "ada", "role": "edit" }], "hoursAgo": 18 }
+  ],
+  "meetings": [
+    { "key": "standup", "title": "Launch stand-up", "owner": "ada" },
+    { "key": "webinar", "title": "Launch webinar", "owner": "ada" },
+    { "key": "pilots", "title": "Pilot customer calls", "owner": "grace" }
+  ],
+  "mail": [
+    {
+      "key": "pricing", "from": "ada", "to": ["grace"], "day": -3, "time": "09:12", "subject": "Launch pricing",
+      "body": "Hi Grace,\n\nI've put £29 per workshop per month in the brief. My reasoning: it's less than the cost of one late delivery, and it's an easy yes for a workshop owner without asking a partner first.\n\nCould you pull the pilot usage numbers before we decide? I'd like to know how many people in each workshop actually use Loom day to day.\n\nAda"
+    },
+    {
+      "key": "pricing-2", "replyTo": "pricing", "from": "grace", "to": ["ada"], "day": -2, "time": "17:40", "subject": "Re: Launch pricing",
+      "body": "Pulled them. The median is 6 active planners per workshop; the biggest pilot, Hale & Co, has 19.\n\nTwo pilots told me without being asked that they'd pay £39. I've left a comment on the brief. Could we hold the price until we've seen this week's conversions?\n\nGrace"
+    },
+    {
+      "key": "pricing-3", "replyTo": "pricing-2", "from": "ada", "to": ["grace"], "day": -1, "time": "08:05", "subject": "Re: Launch pricing", "unread": true,
+      "body": "That's useful, thank you. Let's keep both numbers on the table and decide at the pricing review on Monday. I've booked it.\n\nAda"
+    },
+    {
+      "key": "rc2", "from": "grace", "to": ["ada"], "day": -1, "time": "16:22", "subject": "Release candidate 2 is on staging", "unread": true,
+      "body": "Hi Ada,\n\nRelease candidate 2 is on staging now.\n\nNew since rc1:\n- guided import from a spreadsheet (try it with Priya's file)\n- a late job now pushes everything after it on the same bench\n- the tablet view no longer zooms in when you tap a job\n\nKnown issue: the weekly summary mail shows times in UTC. The fix is in progress and will be in 1.0.\n\nGrace"
+    },
+    {
+      "key": "proof", "from": "Hannah Brooks <hannah.brooks@brightline-print.example>", "to": ["ada"], "day": -1, "time": "11:47", "subject": "Your flyer proof is ready", "unread": true,
+      "body": "Hello Ada,\n\nThe proof for your A5 launch flyers (2,000 copies, 350gsm silk, printed both sides) is ready. I've checked the bleed, and the QR code scans correctly.\n\nIf you're happy, reply \"approved\" by Friday at noon and we'll print on Monday for delivery to your office next Wednesday.\n\nThe total is as quoted: £612 including VAT and delivery.\n\nKind regards,\nHannah Brooks\nAccount manager, Brightline Print\n+44 20 7946 0321"
+    },
+    {
+      "key": "interview", "from": "Tomás Ferreira <tomas@workshopweekly.example>", "to": ["ada"], "day": -2, "time": "14:05", "subject": "Interview request: the Loom launch",
+      "body": "Dear Ada,\n\nI write the small-business column at Workshop Weekly. A reader tells me Analytical Engines is launching a planning tool for workshops next week.\n\nWould you have 20 minutes for a phone interview before then? I'm free most mornings. I'd especially like to speak to one of your pilot customers, if one would be willing.\n\nBest wishes,\nTomás Ferreira\nSmall-business editor, Workshop Weekly"
+    },
+    {
+      "key": "priya", "from": "Priya Shah <priya@shahanddaughters.example>", "to": ["grace"], "day": -4, "time": "10:30", "subject": "Our order spreadsheet for the import test",
+      "body": "Hi Grace,\n\nAs promised, here is how we track orders at the moment: one row per job, with the customer, the fabric, the bench and the date we promised. There are about 140 open jobs in it. I'll send the file over this afternoon.\n\nYou're welcome to use it to test the new import. Shout if anything doesn't make sense; a few of the columns only mean something to my dad.\n\nPriya"
+    },
+    {
+      "key": "priya-2", "replyTo": "priya", "from": "grace", "to": ["Priya Shah <priya@shahanddaughters.example>"], "day": -4, "time": "11:02", "subject": "Re: Our order spreadsheet for the import test",
+      "body": "Thanks Priya, that's exactly what we need. I'll run it through the import this week and send you a screenshot of the result. If it works, would you mind us showing it (with customer names hidden) in the launch webinar?\n\nGrace"
+    }
+  ],
+  "events": [
+    { "title": "Launch stand-up", "owner": "ada", "guests": ["grace"], "week": 0, "day": "mon", "time": "09:30", "minutes": 15, "repeat": ["mo", "we", "fr"], "meeting": "standup" },
+    { "title": "Pilot call: Shah & Daughters", "owner": "grace", "week": 0, "day": "tue", "time": "11:00", "minutes": 45, "place": "Phone: +44 116 496 0532", "meeting": "pilots", "description": "Walk Priya through the guided import with her own spreadsheet." },
+    { "title": "Call with the Guild of Furniture Makers", "owner": "ada", "week": 0, "day": "tue", "time": "12:30", "minutes": 30, "place": "Phone", "description": "Ask them to announce the launch webinar to members." },
+    { "title": "Webinar slides review", "owner": "ada", "guests": ["grace"], "week": 0, "day": "thu", "time": "15:30", "minutes": 45, "meeting": "webinar", "description": "Walk through the Loom launch plan deck and cut it to ten minutes." },
+    { "title": "Release candidate review", "owner": "grace", "guests": ["ada"], "week": 0, "day": "wed", "time": "14:00", "minutes": 60, "place": "Office, big table", "description": "Go through rc2 on staging together. Bring the release checklist." },
+    { "title": "Press kit sign-off", "owner": "ada", "week": 0, "day": "fri", "time": "11:00", "minutes": 30, "description": "Fact sheet, logo and screenshot in the Press kit folder." },
+    { "title": "Approve flyer proof", "owner": "ada", "week": 0, "day": "fri", "time": "12:00", "minutes": 15, "description": "Brightline needs the answer by noon." },
+    { "title": "Pricing review", "owner": "ada", "guests": ["grace"], "week": 1, "day": "mon", "time": "14:00", "minutes": 60, "place": "Office, big table", "description": "£29 or £39 per workshop per month. Grace brings the conversion numbers." },
+    { "title": "Interview with Workshop Weekly", "owner": "ada", "week": 1, "day": "tue", "time": "10:00", "minutes": 30, "place": "Phone" },
+    { "title": "Flyers delivered", "owner": "ada", "week": 1, "day": "wed", "allDay": true, "description": "2,000 flyers from Brightline Print." },
+    { "title": "Webinar rehearsal", "owner": "ada", "guests": ["grace"], "week": 1, "day": "wed", "time": "15:00", "minutes": 90, "meeting": "webinar" },
+    { "title": "Loom 1.0 launch", "owner": "ada", "guests": ["grace"], "week": 1, "day": "thu", "allDay": true },
+    { "title": "Launch webinar for the Guild of Furniture Makers", "owner": "ada", "guests": ["grace"], "week": 1, "day": "thu", "time": "16:00", "minutes": 60, "meeting": "webinar", "description": "Ten minutes of slides, then the planner live with Priya's data, then questions." },
+    { "title": "First-week numbers", "owner": "ada", "guests": ["grace"], "week": 1, "day": "fri", "time": "10:00", "minutes": 45 }
+  ],
+  "contacts": [
+    { "owner": "ada", "given": "Hannah", "surname": "Brooks", "company": "Brightline Print", "title": "Account manager", "email": "hannah.brooks@brightline-print.example", "phone": "+44 20 7946 0321" },
+    { "owner": "ada", "given": "Tomás", "surname": "Ferreira", "company": "Workshop Weekly", "title": "Small-business editor", "email": "tomas@workshopweekly.example", "phone": "+44 20 7946 0874" },
+    { "owner": "ada", "given": "Priya", "surname": "Shah", "company": "Shah & Daughters Upholstery", "title": "Director", "email": "priya@shahanddaughters.example", "phone": "+44 116 496 0532", "note": "Pilot customer since the summer. Happy to talk to the press." },
+    { "owner": "grace", "given": "Priya", "surname": "Shah", "company": "Shah & Daughters Upholstery", "title": "Director", "email": "priya@shahanddaughters.example", "phone": "+44 116 496 0532" }
+  ],
+  "chat": [
+    {
+      "name": "Loom launch", "owner": "ada", "members": ["grace"],
+      "messages": [
+        ["ada", "Morning! The flyer proof from Brightline is in my inbox. I'll look at it before the stand-up."],
+        ["grace", "Great. rc2 is on staging, with the guided import in it."],
+        ["grace", "I tried it with Priya's spreadsheet: 140 jobs in under a minute, and only two columns needed matching by hand."],
+        ["ada", "That's the demo for the webinar, then."],
+        ["ada", "Could you add the pilot numbers to the brief before Monday's pricing review? Doesn't need to be pretty."],
+        ["grace", "Will do after lunch."]
+      ]
+    }
+  ]
+}

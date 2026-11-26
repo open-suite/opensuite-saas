@@ -18,6 +18,8 @@ MAIL_DOMAIN=${3:-$DOMAIN}
 case "$ACME_EMAIL" in file:*) ACME_EMAIL=$(cat "${ACME_EMAIL#file:}") ;; esac
 # The relay carries a password, so it can also live in a file on the server.
 case "${OS_MAIL_RELAY:-}" in file:*) OS_MAIL_RELAY=$(cat "${OS_MAIL_RELAY#file:}") ;; esac
+# So do the demo organisation's passwords (<org id>,<login>:<password>,...).
+case "${OS_DEMO:-}" in file:*) OS_DEMO=$(cat "${OS_DEMO#file:}") ;; esac
 
 TUWUNEL_VERSION=v2.0.0
 STALWART_VERSION=v1.1.1
@@ -110,6 +112,7 @@ OS_MAIL_RELAY=${OS_MAIL_RELAY:-}
 OS_SIGNUP=${OS_SIGNUP:-open}
 OS_SIGNUP_CODE=${OS_SIGNUP_CODE:-}
 OS_OPERATORS=${OS_OPERATORS:-}
+OS_DEMO=${OS_DEMO:-}
 EOF
 
 say "chat engine (Tuwunel $TUWUNEL_VERSION)"

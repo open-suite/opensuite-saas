@@ -332,6 +332,31 @@ func (h *Hub) release(rm *room) {
 	}
 }
 
+// evict disconnects everyone working on these documents, which have just been
+// deleted from under them (a demo reset). Their editors reconnect, are
+// refused, and drop the document.
+func (h *Hub) evict(ids []string) {
+	h.mu.Lock()
+	var open []*room
+	for _, id := range ids {
+		if rm := h.rooms[id]; rm != nil {
+			open = append(open, rm)
+		}
+	}
+	h.mu.Unlock()
+	var conns []*websocket.Conn
+	for _, rm := range open {
+		rm.mu.Lock()
+		for p := range rm.peers {
+			conns = append(conns, p.conn)
+		}
+		rm.mu.Unlock()
+	}
+	for _, c := range conns {
+		c.CloseNow()
+	}
+}
+
 // notify sends a server-originated message to everyone in a room, if open.
 func (h *Hub) notify(id string, msg []byte) {
 	h.mu.Lock()

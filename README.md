@@ -51,7 +51,7 @@ at that distance, 47 KB). Memory in use for the whole suite: about 500 MB.
 
 | Path | What |
 | --- | --- |
-| `server/` | Go backend. `main.go` routes, `auth.go`, `admin.go`, `docs.go` (sync hub), `versions.go` (history), `files.go` (drive), `search.go` (index), `mail.go`, `calendar.go`, `chat.go`, `meet.go`, `tls.go` (ACME), `web.go`, `convert.go` (pandoc). |
+| `server/` | Go backend. `main.go` routes, `auth.go`, `admin.go`, `docs.go` (sync hub), `versions.go` (history), `files.go` (drive), `search.go` (index), `mail.go`, `calendar.go`, `chat.go`, `meet.go`, `tls.go` (ACME), `web.go`, `convert.go` (pandoc), `demo.go` (daily demo reset; its story and files in `server/demo/`). |
 | `web/` | Preact app. `src/lib/` data layers (`store`, `api`, `sync`, `mail`, `calendar`, `contacts`, `files`, `search`, `matrix`), `src/apps/` screens, `src/sw.js` offline shell. |
 | `deploy/` | `deploy.sh` (build and ship), `install.sh` (server side, idempotent), nginx and systemd files, `coexist-k3s.sh` (shared demo box only). |
 | `dev/` | `mail.sh` (a loopback mail engine), `run.sh` (build and run a checkout locally). |
@@ -87,7 +87,10 @@ service restarts only if its binary or configuration changed. Optional
 settings pass through the environment: `OS_SIGNUP` (`open`, `code`, `closed`),
 `OS_SIGNUP_CODE`, `OS_OPERATORS` (sign-in addresses of platform operators),
 `OS_MAIL_RELAY` (`host:port:user:password` for an outbound smarthost, or
-`file:/path` to read it from a file on the server).
+`file:/path` to read it from a file on the server), `OS_DEMO`
+(`<org id>,<login>:<password>,...`, or `file:/path`: a public demo
+organisation, put back to the example story in `server/demo/` every morning at
+04:00 Berlin time and from Admin → All organisations).
 
 For mail to be accepted by other providers, publish for the mail domain: an
 MX record to the server, SPF, the DKIM keys the mail engine generated (shown

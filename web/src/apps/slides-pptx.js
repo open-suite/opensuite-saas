@@ -9,7 +9,8 @@ import PptxGen from 'pptxgenjs'
 import JSZip from 'jszip'
 import * as Y from 'yjs'
 import { W, H, themeOf, fonts, fontKey, slideColors, decor, resolve, roleStyle, textColor, textPad, isShape } from './slides-model.js'
-import { buildDeck, keepWarm, uploadImage } from './slides-core.js'
+import { keepWarm, uploadImage } from './slides-core.js'
+import { buildDeck } from './slides-doc.js'
 
 const IN = 96 // slide units per inch
 const hex = (c) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c.slice(1).toUpperCase() : null)

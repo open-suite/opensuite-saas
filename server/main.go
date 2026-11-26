@@ -29,6 +29,7 @@ type Config struct {
 	SignupCode string
 	PublicIPs  []string // addresses a custom domain must resolve to
 	Operators  []string // platform operator logins
+	Demo       string   // the public demo organisation and its passwords (demo.go)
 
 	LiveKitKey    string
 	LiveKitSecret string
@@ -54,6 +55,7 @@ type Server struct {
 	tls  *CertManager
 	lim  *limiter
 	http *http.Client
+	demo *demoConfig // nil when there is no demo organisation
 }
 
 func env(k, def string) string {
@@ -94,6 +96,7 @@ func main() {
 		SignupCode:    env("OS_SIGNUP_CODE", ""),
 		PublicIPs:     splitList(env("OS_PUBLIC_IPS", "")),
 		Operators:     splitList(env("OS_OPERATORS", "")),
+		Demo:          env("OS_DEMO", ""),
 		LiveKitKey:    env("OS_LIVEKIT_KEY", ""),
 		LiveKitSecret: env("OS_LIVEKIT_SECRET", ""),
 		MatrixURL:     strings.TrimRight(env("OS_MATRIX_URL", ""), "/"),
@@ -122,6 +125,11 @@ func main() {
 	s := &Server{cfg: cfg, w: w, r: r, lim: newLimiter(), http: &http.Client{Timeout: 20 * time.Second}}
 	s.hub = newHub(s)
 	s.tls = newCertManager(s)
+	if cfg.Demo != "" {
+		if s.demo, err = parseDemo(cfg.Demo); err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	// "opensuite mail-setup <engine url>" is run once by the installer.
 	if len(os.Args) == 3 && os.Args[1] == "mail-setup" {
@@ -156,6 +164,9 @@ func main() {
 	go s.tls.run(ctx)
 	go s.janitor(ctx)
 	go s.mailGroupware(ctx)
+	if s.demo != nil {
+		go s.demoSchedule(ctx)
+	}
 	go func() {
 		log.Printf("opensuite listening on %s for %s", cfg.Listen, cfg.Domain)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -195,6 +206,7 @@ func (s *Server) routes() http.Handler {
 	// platform operator
 	m.HandleFunc("GET /api/operator/orgs", s.operator(s.handleOperatorOrgs))
 	m.HandleFunc("PATCH /api/operator/orgs/{id}", s.operator(s.handleOperatorOrgUpdate))
+	m.HandleFunc("POST /api/operator/demo-reset", s.operator(s.handleDemoReset))
 
 	// documents and spreadsheets
 	m.HandleFunc("GET /api/docs", s.auth(s.handleDocList))

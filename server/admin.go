@@ -377,6 +377,7 @@ func (s *Server) handleOperatorOrgs(w http.ResponseWriter, r *http.Request, u *U
 		Created int64  `json:"created"`
 		Users   int    `json:"users"`
 		Docs    int    `json:"docs"`
+		Demo    bool   `json:"demo"` // reset every morning (demo.go)
 	}
 	out := []row{}
 	rows, err := s.r.Query(`SELECT o.id, o.name, o.plan, o.created,
@@ -387,6 +388,7 @@ func (s *Server) handleOperatorOrgs(w http.ResponseWriter, r *http.Request, u *U
 		for rows.Next() {
 			var x row
 			rows.Scan(&x.ID, &x.Name, &x.Plan, &x.Created, &x.Users, &x.Docs)
+			x.Demo = s.demo != nil && x.ID == s.demo.org
 			out = append(out, x)
 		}
 	}
