@@ -74,7 +74,13 @@ function report(label, samples, budget = BUDGET) {
     }
     report('switching sections', hops)
 
-    await click('a[href="/files"]', `document.querySelector('.page-head')`)
+    // Recent lists documents wherever they are filed, so the test does not
+    // depend on how the account's folders are arranged.
+    const toRecent = async () => {
+      await click('a[href="/files"]', `document.querySelector('.page-head')`)
+      await click('a[href="/files/recent"]', `document.querySelector('a.list-row[href^="/d/"]') && document.querySelector('a.list-row[href^="/s/"]')`)
+    }
+    await toRecent()
     const docHref = await page.getAttribute('a.list-row[href^="/d/"]', 'href')
     const sheetHref = await page.getAttribute('a.list-row[href^="/s/"]', 'href')
     const docs = []
@@ -82,11 +88,11 @@ function report(label, samples, budget = BUDGET) {
     const parts = []
     const docParts = []
     for (let i = 0; i < 13; i++) {
-      await click('a[href="/files"]', `document.querySelector('.page-head')`)
+      await toRecent()
       await page.waitForTimeout(300)
       docs.push(await click(`a[href="${docHref}"]`, `document.querySelector('.paper')?.textContent.trim().length > 0`))
       docParts.push(await page.evaluate(() => window.__docTiming))
-      await click('a[href="/files"]', `document.querySelector('.page-head')`)
+      await toRecent()
       await page.waitForTimeout(300)
       sheets.push(await click(`a[href="${sheetHref}"]`, `!!document.querySelector('.toolbar .select') && document.querySelector('.formula-bar .ref')?.textContent === 'A1'`))
       parts.push(await page.evaluate(() => window.__sheetTiming))
