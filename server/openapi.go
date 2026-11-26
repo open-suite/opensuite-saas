@@ -15,7 +15,7 @@ import (
 const apiIntro = "Everything a member can do in Open Suite, a program can do through this API: mail, calendar, contacts, chat, meetings, " +
 	"files, documents, spreadsheets, presentations, search and, for administrators, the organisation itself. " +
 	"Send a token as `Authorization: Bearer <token>`. A token acts as the member it belongs to, with their permissions; a read-only token can only read. " +
-	"People create tokens in Account settings; administrators create them for agents. Apps can also ask a person to connect them with OAuth 2.1. " +
+	"People create tokens in Your account; administrators create them for agents. Apps can also ask a person to connect them with OAuth 2.1. " +
 	"Errors are JSON `{\"error\": \"...\"}` with an HTTP status. Lists are paged: pass the `next` value of one page as `cursor` to get the next. " +
 	"The same operations are tools of the MCP server at `/mcp`."
 
@@ -84,7 +84,7 @@ func (s *Server) openAPI(r *http.Request) map[string]any {
 		"components": map[string]any{
 			"schemas": components,
 			"securitySchemes": map[string]any{
-				"token": map[string]any{"type": "http", "scheme": "bearer", "description": "An API token from Account settings, or an OAuth access token."},
+				"token": map[string]any{"type": "http", "scheme": "bearer", "description": "An API token from Your account, or an OAuth access token."},
 				"oauth": map[string]any{"type": "oauth2", "flows": map[string]any{"authorizationCode": map[string]any{
 					"authorizationUrl": base + "/oauth/authorize", "tokenUrl": base + "/oauth/token", "refreshUrl": base + "/oauth/token",
 					"scopes": map[string]string{"read": "Read everything the member can read.", "write": "Make changes as the member."},

@@ -531,6 +531,15 @@ func TestOAuth(t *testing.T) {
 	if code := a.do("GET", "/api/oauth/request?"+q.Encode(), nil, &info); code != 200 || info.Client.Name != "Claude" || !info.CanChooseReadOnly {
 		t.Fatalf("consent request: %d %+v", code, info)
 	}
+	only := url.Values{}
+	for k, v := range q {
+		only[k] = v
+	}
+	only.Set("scope", "offline_access")
+	info.CanChooseReadOnly = false
+	if a.do("GET", "/api/oauth/request?"+only.Encode(), nil, &info); !info.CanChooseReadOnly {
+		t.Error("asking only for offline_access made the connection read-only")
+	}
 	if code := newClient(t, ts).do("POST", "/api/oauth/approve", map[string]any{"query": q.Encode()}, nil); code != 401 {
 		t.Errorf("approval signed out: %d", code)
 	}

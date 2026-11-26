@@ -2,7 +2,7 @@ package main
 
 // API tokens. A token acts as the member who owns it, with that member's
 // permissions, optionally limited to reading. People create their own in
-// Account settings; administrators create them for agents, which have no
+// Your account; administrators create them for agents, which have no
 // password and sign in no other way. Connected apps (OAuth, oauth.go) are
 // tokens too, so one list shows everything that can act for someone, and
 // revoking a connection is revoking its row.
@@ -200,7 +200,7 @@ func (s *Server) agentOf(w http.ResponseWriter, r *http.Request, u *User) *User 
 		return nil
 	}
 	if !t.isAgent() {
-		fail(w, 409, "Only agents' tokens are managed here. People create their own in Account settings.")
+		fail(w, 409, "Only agents' tokens are managed here. People create their own in Your account.")
 		return nil
 	}
 	return t

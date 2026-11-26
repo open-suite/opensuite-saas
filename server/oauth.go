@@ -121,7 +121,7 @@ func (s *Server) handleServerMetadata(w http.ResponseWriter, r *http.Request) {
 		"token_endpoint":                                 b + "/oauth/token",
 		"registration_endpoint":                          b + "/oauth/register",
 		"revocation_endpoint":                            b + "/oauth/revoke",
-		"scopes_supported":                               oauthScopes,
+		"scopes_supported":                               append(slices.Clone(oauthScopes), "offline_access"),
 		"response_types_supported":                       []string{"code"},
 		"response_modes_supported":                       []string{"query"},
 		"grant_types_supported":                          []string{"authorization_code", "refresh_token"},
@@ -406,7 +406,9 @@ func (s *Server) readAuthRequest(r *http.Request, q url.Values) *authRequest {
 	if a.resource != "" && !s.ownResource(r, a.resource) {
 		a.redirectErr = "invalid_target"
 	}
-	scopes := strings.Fields(q.Get("scope"))
+	// Refresh tokens are always issued, so offline_access, which some clients
+	// ask for to get one, changes nothing; nor does a scope we do not know.
+	scopes := slices.DeleteFunc(strings.Fields(q.Get("scope")), func(sc string) bool { return !slices.Contains(oauthScopes, sc) })
 	a.write = len(scopes) == 0 || slices.Contains(scopes, "write")
 	return a
 }
@@ -632,7 +634,7 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request, clientID string
 		return
 	}
 	// Asking for less is allowed; asking for more needs the person again.
-	if scopes := strings.Fields(r.PostForm.Get("scope")); len(scopes) > 0 && !slices.Contains(scopes, "write") {
+	if scopes := slices.DeleteFunc(strings.Fields(r.PostForm.Get("scope")), func(sc string) bool { return !slices.Contains(oauthScopes, sc) }); len(scopes) > 0 && !slices.Contains(scopes, "write") {
 		readOnly = true
 	}
 	access, refresh := newSecret(), "osr_"+newToken()
