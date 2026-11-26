@@ -33,7 +33,7 @@ function NewGroup({ domains, onClose, onCreated }) {
   return (
     <Modal title="New group" onClose={onClose} footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" busy={busy} onClick={submit}>Create group</Button></>}>
       <form onSubmit={submit} style={{ display: 'contents' }}>
-        <p class="muted">A group is a shared inbox with its own address, like sales@ or info@. Its members see its mail in Mail beside their own.</p>
+        <p class="muted">A group is a shared inbox with its own address, like sales@ or orders@. Its members see its mail in Mail beside their own.</p>
         {error && <div class="form-error">{error}</div>}
         <Field label="Name" hint="Mail from the group is sent under this name."><input class="input" autofocus value={f.name} onInput={named} placeholder="Sales" required /></Field>
         <Field label="Address">
@@ -151,7 +151,7 @@ export function GroupsAdmin({ data }) {
         <Button kind="primary" icon={Plus} onClick={() => setDialog({ type: 'new' })}>New group</Button>
       </div>
       {list.length === 0 ? (
-        <div class="card"><Empty icon={Users} title="No groups yet" text="A group is a shared inbox such as sales@ or info@: anyone can write to it, and its members answer from it." /></div>
+        <div class="card"><Empty icon={Users} title="No groups yet" text="A group is a shared inbox such as sales@ or orders@: anyone can write to it, and its members answer from it." /></div>
       ) : (
         <div class="card">
           <table class="table">
