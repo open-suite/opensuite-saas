@@ -321,7 +321,7 @@ func TestFilesQuota(t *testing.T) {
 		t.Errorf("admin overview usage = %+v", overview.Usage)
 	}
 	// With no room left, files and document attachments are both refused.
-	plans["free"] = Plan{"Free", 5, 0, 1}
+	plans["free"] = Plan{"Free", 5, 0, 1, false}
 	if code := a.upload("over.bin", "", "application/octet-stream", make([]byte, 10), nil); code != 507 {
 		t.Errorf("upload over quota: %d, want 507", code)
 	}

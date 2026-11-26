@@ -252,6 +252,7 @@ function Organisation({ data }) {
         <div class="row"><h2 class="grow">Plan</h2><span class="badge badge-accent">{lim?.label || '…'}</span></div>
         <div class="row"><span class="grow">People</span><b>{(data?.people || people.value).length} / {lim?.maxUsers ?? '…'}</b></div>
         <div class="row"><span class="grow">Custom domains</span><b>{data?.domains?.length ?? 0} / {lim?.domains ?? '…'}</b></div>
+        <div class="row"><span class="grow">Mail to other providers</span><b>{lim ? (lim.mailOutside ? 'Yes' : 'No, Open Suite addresses only') : '…'}</b></div>
         <div class="row"><span class="grow">Storage <span class="muted">· files {bytes(data?.usage?.files || 0)}, documents {bytes(Math.max(0, used - (data?.usage?.files || 0)))}</span></span><b>{bytes(used)} / {lim?.storageGB ?? '…'} GB</b></div>
         <div style={{ height: 6, borderRadius: 3, background: 'var(--sunken)', overflow: 'hidden' }}><div style={{ width: pct + '%', height: '100%', background: 'var(--accent)' }} /></div>
       </div>

@@ -480,8 +480,90 @@ func (s *Server) handleJMAP(w http.ResponseWriter, r *http.Request, u *User) {
 		delete(args, "fromAccountId")
 		calls = append(calls, []any{name, args, c[2]})
 	}
+	if !s.recipientsAllowed(u, in.MethodCalls) {
+		fail(w, 403, "Your organisation's plan sends mail only to addresses on Open Suite.")
+		return
+	}
 	body, _ := json.Marshal(map[string]any{"using": jmapUsing, "methodCalls": calls})
 	s.mailForward(w, r, u, "POST", "/jmap/", bytes.NewReader(body), "application/json", nil)
+}
+
+type jmapAddr struct {
+	Email string `json:"email"`
+}
+
+// recipientsAllowed checks a request that sends mail for an organisation
+// whose plan keeps mail inside the installation. Every message sent must be
+// created in the same request, so its recipients are all visible here, and
+// each of them must be on a domain this installation hosts.
+func (s *Server) recipientsAllowed(u *User, calls [][]json.RawMessage) bool {
+	var plan string
+	s.r.QueryRow(`SELECT plan FROM orgs WHERE id = ?`, u.OrgID).Scan(&plan)
+	if planFor(plan).MailOutside {
+		return true
+	}
+	created := map[string]bool{}
+	var rcpts []jmapAddr
+	sends, updates := false, false
+	for _, c := range calls {
+		var name string
+		var args struct {
+			Create map[string]struct {
+				To, Cc, Bcc []jmapAddr
+				EmailID     string `json:"emailId"`
+				Envelope    *struct {
+					RcptTo []jmapAddr `json:"rcptTo"`
+				} `json:"envelope"`
+			} `json:"create"`
+			Update map[string]json.RawMessage `json:"update"`
+		}
+		json.Unmarshal(c[0], &name)
+		json.Unmarshal(c[1], &args)
+		switch name {
+		case "Email/set":
+			// An update could change recipients after the check; the app
+			// never combines one with sending.
+			updates = updates || len(args.Update) > 0
+			for id, e := range args.Create {
+				created[id] = true
+				rcpts = append(append(append(rcpts, e.To...), e.Cc...), e.Bcc...)
+			}
+		case "EmailSubmission/set":
+			for _, sub := range args.Create {
+				sends = true
+				if !strings.HasPrefix(sub.EmailID, "#") || !created[sub.EmailID[1:]] {
+					return false
+				}
+				if sub.Envelope != nil {
+					rcpts = append(rcpts, sub.Envelope.RcptTo...)
+				}
+			}
+		}
+	}
+	if !sends {
+		return true
+	}
+	if updates {
+		return false
+	}
+	local := map[string]bool{s.cfg.MailDomain: true}
+	rows, err := s.r.Query(`SELECT domain FROM domains WHERE mail_ok = 1`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d string
+		rows.Scan(&d)
+		local[strings.ToLower(d)] = true
+	}
+	for _, a := range rcpts {
+		at := strings.LastIndexByte(a.Email, '@')
+		if at < 0 || !local[strings.ToLower(a.Email[at+1:])] {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) mailForward(w http.ResponseWriter, r *http.Request, u *User, method, path string, body io.Reader, ctype string, decorate func(http.Header)) {

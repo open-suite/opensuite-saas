@@ -25,11 +25,14 @@ type Plan struct {
 	MaxUsers  int    `json:"maxUsers"`
 	StorageGB int    `json:"storageGB"`
 	Domains   int    `json:"domains"`
+	// MailOutside lets people send to addresses not hosted here. Without it a
+	// throwaway sign-up cannot use the suite, or its sending reputation, for spam.
+	MailOutside bool `json:"mailOutside"`
 }
 
 var plans = map[string]Plan{
-	"free": {"Free", 5, 5, 1},
-	"team": {"Team", 250, 250, 10},
+	"free": {"Free", 5, 5, 1, false},
+	"team": {"Team", 250, 250, 10, true},
 }
 
 func planFor(name string) Plan {

@@ -104,7 +104,8 @@ OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... node tests/pe
 ## What it includes
 
 - Organisations with owner, administrator and member roles; a free plan
-  (5 people, 5 GB, 1 custom domain) and a larger one, switched by the platform
+  (5 people, 5 GB, 1 custom domain, mail only to addresses this installation
+  hosts) and a larger one that can mail anyone, switched by the platform
   operator. Admins add people (temporary password, replaced at first sign-in),
   change roles, suspend, reset passwords and remove.
 - Custom domains for the web address and for mail, verified against DNS, with
