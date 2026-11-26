@@ -12,7 +12,7 @@ export function Avatar({ name, id, email, size = 32 }) {
   return (
     <span class="avatar" style={{ width: size, height: size, fontSize: size * 0.4, background: colorFor(id || name) }} aria-hidden="true">
       {initials(name)}
-      {photo && <img class="avatar-photo" src={photo} alt="" loading="lazy" decoding="async" onError={(e) => { e.currentTarget.style.display = 'none' }} />}
+      {photo && <img class="avatar-photo" src={photo} alt="" decoding="async" onError={(e) => { e.currentTarget.style.display = 'none' }} />}
     </span>
   )
 }

@@ -11,13 +11,13 @@
 //
 // Organisations cannot be deleted, so each run leaves two behind, named
 // "<OS_E2E_ORG or E2E test> <stamp> (example|empty)". With OS_E2E_KEEP=1 the
-// example data is left in place to look at. Sign-up allows five an hour from
-// one address.
+// example data is left in place to look at, and OS_E2E_FOUNDER_PASS sets the
+// founders' password. Sign-up allows five an hour from one address.
 const { connect, collect, BASE } = require('./browser.cjs')
 
 const PREFIX = process.env.OS_E2E_ORG || 'E2E test'
 const KEEP = !!process.env.OS_E2E_KEEP
-const PASS = 'example-founder-' + Math.random().toString(36).slice(2, 10)
+const PASS = process.env.OS_E2E_FOUNDER_PASS || 'example-founder-' + Math.random().toString(36).slice(2, 10)
 
 ;(async () => {
   const b = await connect()
@@ -58,7 +58,7 @@ const PASS = 'example-founder-' + Math.random().toString(36).slice(2, 10)
     if (me.org.limits.maxUsers !== 5 || me.org.plan !== 'free') throw new Error('not a Free organisation: ' + JSON.stringify(me.org))
     await A.goto(BASE + '/admin/people')
     await A.waitForSelector('.badge:text-is("Example") >> nth=1')
-    if (!(await A.textContent('.page')).includes('1 of 5 people')) throw new Error('example colleagues are counted against the plan')
+    await A.waitForSelector('text=/1 of 5 people/', { timeout: 10000 }).catch(() => { throw new Error('example colleagues are counted against the plan') })
     await A.waitForFunction(() => [...document.querySelectorAll('img.avatar-photo')].filter((i) => i.complete && i.naturalWidth > 0).length >= 2)
     ok('two example colleagues with pictures, not counted against the plan')
     await A.goto(BASE + '/files/shared') // the colleagues' folder, shared with the organisation

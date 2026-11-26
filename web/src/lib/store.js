@@ -39,12 +39,34 @@ export const peopleById = computed(() => Object.fromEntries(people.value.map((p)
 export const peopleByMx = computed(() => Object.fromEntries(people.value.map((p) => [p.mx, p])))
 export const peopleByEmail = computed(() => Object.fromEntries(people.value.map((p) => [p.email.toLowerCase(), p])))
 
-// A colleague's profile picture, by id, address or chat id; null for none.
-// The version in the address lets the browser keep a picture for good.
+const photoURL = (p) => `/api/v1/people/${p.id}/photo?v=${p.photo}`
+
+// A colleague's profile picture, by id, address or chat id, once it is in
+// memory and decoded (warmPhotos); null until then, and for none. The
+// version in the address lets the browser keep a picture for good.
+export const photosReady = signal(0)
 export function photoFor(key) {
   if (!key) return null
   const p = peopleById.value[key] || peopleByEmail.value[String(key).toLowerCase()] || peopleByMx.value[key]
-  return p?.photo ? `/api/v1/people/${p.id}/photo?v=${p.photo}` : null
+  photosReady.value // redraw when a picture becomes ready
+  return p?.photo && warm.get(photoURL(p))?.ready ? photoURL(p) : null
+}
+
+// warmPhotos fetches and decodes every colleague's picture while the app is
+// idle, and keeps them; avatars show a picture only once it is ready, so
+// drawing one never waits on the network or a decode (tests/perf.cjs found
+// opening a document with comments 30 ms slower without this).
+const warm = new Map()
+export function warmPhotos() {
+  for (const p of people.value) {
+    const url = p.photo && photoURL(p)
+    if (!url || warm.has(url)) continue
+    const entry = { ready: false }
+    warm.set(url, entry)
+    const img = new Image()
+    img.src = url
+    img.decode().then(() => { entry.ready = true; entry.img = img; photosReady.value++ }, () => {})
+  }
 }
 
 export function setBoot(b) {

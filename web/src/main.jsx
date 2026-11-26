@@ -4,7 +4,7 @@ import { useEffect } from 'preact/hooks'
 import { signal } from '@preact/signals'
 import { Home as HomeIcon, Mail as MailIcon, MessageSquare, Video, FolderOpen, Settings, LogOut, User, CalendarDays, Users } from 'lucide-preact'
 import './style.css'
-import { boot, user, isAdmin, unread, confirmed } from './lib/store.js'
+import { boot, user, isAdmin, unread, confirmed, warmPhotos } from './lib/store.js'
 import { path, parts, navigate } from './lib/router.js'
 import { refreshBoot } from './lib/api.js'
 import { signOut } from './lib/session.js'
@@ -112,6 +112,7 @@ function App() {
       loadConnect()
     })
   }, [u?.id, b?.chat?.ready, b?.mail?.ready])
+  useEffect(() => { if (u) idle(warmPhotos) }, [u?.id, b?.people])
 
   // A meeting link works for anyone, signed in or not.
   if (p[0] === 'meet' && p[1]) {
