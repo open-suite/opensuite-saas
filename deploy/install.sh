@@ -27,6 +27,7 @@ STALWART_VERSION=v1.1.1
 LIVEKIT_VERSION=1.13.11
 # The content engine (the app's own document code, run on demand by the API).
 NODE_VERSION=24.21.0
+PANDOC_VERSION=3.14
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 BUNDLE=$(dirname "$HERE") # deploy.sh ships: opensuite (binary), web/, dist-headless/, deploy/
@@ -60,12 +61,21 @@ ensure() {
 }
 
 say "packages"
-if ! command -v nginx >/dev/null || ! command -v pandoc >/dev/null; then
+if ! command -v nginx >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
   # Installing our packages must never restart unrelated services on the host.
   export NEEDRESTART_SUSPEND=1
   apt-get update -qq
-  apt-get install -y -qq nginx pandoc curl ca-certificates >/dev/null
+  apt-get install -y -qq nginx curl ca-certificates >/dev/null
+fi
+# Pandoc converts Word and OpenDocument files. Ubuntu's build cannot write
+# .docx under --sandbox (its data files live on disk, which the sandbox
+# forbids); the project's own build carries them inside.
+if [ "$(pandoc --version 2>/dev/null | awk 'NR==1{print $2}')" != "$PANDOC_VERSION" ]; then
+  export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1
+  curl -fsSL -o /tmp/pandoc.deb "https://github.com/jgm/pandoc/releases/download/$PANDOC_VERSION/pandoc-$PANDOC_VERSION-1-amd64.deb"
+  apt-get install -y -qq /tmp/pandoc.deb >/dev/null
+  rm -f /tmp/pandoc.deb
 fi
 
 say "users and directories"

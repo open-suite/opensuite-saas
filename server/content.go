@@ -18,6 +18,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -486,6 +487,7 @@ func (s *Server) readText(w http.ResponseWriter, r *http.Request, u *User, st en
 	case "", "markdown":
 		out, err := s.pandoc(r.Context(), "html", "md", []byte(s.pictures(r, u, res.HTML, false)))
 		if err != nil {
+			log.Printf("export: %v", err)
 			fail(w, 500, "That document couldn't be converted.")
 			return "", false
 		}
@@ -804,6 +806,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request, u *User) {
 		}
 		var err error
 		if out, err = s.pandoc(r.Context(), "html", format, []byte(h)); err != nil {
+			log.Printf("export: %v", err)
 			fail(w, 500, "That document couldn't be converted.")
 			return
 		}
