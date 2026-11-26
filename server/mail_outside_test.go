@@ -35,6 +35,16 @@ func TestFreePlanMailStaysInside(t *testing.T) {
 		}
 		return calls
 	}
+	invite := func(to string, envelope bool) []any {
+		sub := map[string]any{"identityId": "i", "emailId": "#m"}
+		if envelope {
+			sub["envelope"] = map[string]any{"mailFrom": map[string]string{"email": "alice@office.test"}, "rcptTo": []map[string]string{{"email": to}}}
+		}
+		return []any{
+			[]any{"Email/import", map[string]any{"emails": map[string]any{"m": map[string]any{"blobId": "B"}}}, "0"},
+			[]any{"EmailSubmission/set", map[string]any{"create": map[string]any{"s": sub}}, "1"},
+		}
+	}
 	cases := []struct {
 		name  string
 		calls []any
@@ -51,7 +61,11 @@ func TestFreePlanMailStaysInside(t *testing.T) {
 			[]any{"EmailSubmission/set", map[string]any{"create": map[string]any{"s": map[string]any{"emailId": "M123"}}}, "0"},
 		}, 403},
 		{"recipients changed", send("bob@office.test", []any{"Email/set", map[string]any{"update": map[string]any{"#m": map[string]any{"to": []map[string]string{{"email": "x@gmail.com"}}}}}, "2"}), 403},
-		{"no sending", []any{[]any{"Mailbox/get", map[string]any{}, "0"}}, 200},
+		{"invitation to a colleague", invite("bob@office.test", true), 200},
+		{"invitation outside", invite("x@gmail.com", true), 403},
+		{"invitation without an envelope", invite("bob@office.test", false), 403},
+		{"same id set and imported", append(send("bob@office.test"), []any{"Email/import", map[string]any{"emails": map[string]any{"m": map[string]any{"blobId": "B"}}}, "2"}), 403},
+		{"no sending",[]any{[]any{"Mailbox/get", map[string]any{}, "0"}}, 200},
 	}
 	for _, c := range cases {
 		before := forwarded.Load()

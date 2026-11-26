@@ -495,16 +495,25 @@ type jmapAddr struct {
 // recipientsAllowed checks a request that sends mail for an organisation
 // whose plan keeps mail inside the installation. Every message sent must be
 // created in the same request, so its recipients are all visible here, and
-// each of them must be on a domain this installation hosts.
+// each of them must be on a domain this installation hosts. A message
+// imported whole (a calendar invitation) has its recipients inside the
+// uploaded file, so sending one needs an envelope that names them.
 func (s *Server) recipientsAllowed(u *User, calls [][]json.RawMessage) bool {
 	var plan string
 	s.r.QueryRow(`SELECT plan FROM orgs WHERE id = ?`, u.OrgID).Scan(&plan)
 	if planFor(plan).MailOutside {
 		return true
 	}
-	created := map[string]bool{}
+	created := map[string]bool{}  // made with Email/set
+	imported := map[string]bool{} // made with Email/import
 	var rcpts []jmapAddr
-	sends, updates := false, false
+	type submission struct {
+		emailID  string
+		rcptTo   []jmapAddr
+		envelope bool
+	}
+	var subs []submission
+	updates := false
 	for _, c := range calls {
 		var name string
 		var args struct {
@@ -516,6 +525,7 @@ func (s *Server) recipientsAllowed(u *User, calls [][]json.RawMessage) bool {
 				} `json:"envelope"`
 			} `json:"create"`
 			Update map[string]json.RawMessage `json:"update"`
+			Emails map[string]json.RawMessage `json:"emails"`
 		}
 		json.Unmarshal(c[0], &name)
 		json.Unmarshal(c[1], &args)
@@ -528,20 +538,33 @@ func (s *Server) recipientsAllowed(u *User, calls [][]json.RawMessage) bool {
 				created[id] = true
 				rcpts = append(append(append(rcpts, e.To...), e.Cc...), e.Bcc...)
 			}
+		case "Email/import":
+			for id := range args.Emails {
+				imported[id] = true
+			}
 		case "EmailSubmission/set":
 			for _, sub := range args.Create {
-				sends = true
-				if !strings.HasPrefix(sub.EmailID, "#") || !created[sub.EmailID[1:]] {
-					return false
-				}
+				var to []jmapAddr
 				if sub.Envelope != nil {
-					rcpts = append(rcpts, sub.Envelope.RcptTo...)
+					to = sub.Envelope.RcptTo
 				}
+				subs = append(subs, submission{sub.EmailID, to, sub.Envelope != nil})
 			}
 		}
 	}
-	if !sends {
+	if len(subs) == 0 {
 		return true
+	}
+	// Judged after every call is read, so a later call cannot reuse an id.
+	for _, sub := range subs {
+		ref, isRef := strings.CutPrefix(sub.emailID, "#")
+		switch {
+		case isRef && created[ref] && !imported[ref]:
+		case isRef && imported[ref] && !created[ref] && sub.envelope && len(sub.rcptTo) > 0:
+		default:
+			return false
+		}
+		rcpts = append(rcpts, sub.rcptTo...)
 	}
 	if updates {
 		return false

@@ -460,7 +460,12 @@ async function sendCalendarMail({ to, subject, lead, ev, method, only }) {
   const [imp, sub] = await jm([
     ['Email/import', { emails: { m: { blobId: up.blobId, mailboxIds: { [sent]: true }, keywords: { $seen: true } } } }],
     // The calendar is the record of an invitation; no copy stays in Sent.
-    ['EmailSubmission/set', { create: { s: { identityId: idn, emailId: '#m' } }, onSuccessDestroyEmail: ['#s'] }],
+    // The envelope names the recipients, so the server can check them
+    // without reading the uploaded message.
+    ['EmailSubmission/set', {
+      create: { s: { identityId: idn, emailId: '#m', envelope: { mailFrom: { email: me.email }, rcptTo: to.map((t) => ({ email: t.email })) } } },
+      onSuccessDestroyEmail: ['#s'],
+    }],
   ])
   const err = imp.notCreated?.m || sub.notCreated?.s
   if (err) throw new Error(err.description || 'The invitation could not be sent.')
