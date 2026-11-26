@@ -51,7 +51,7 @@ at that distance, 47 KB). Memory in use for the whole suite: about 500 MB.
 
 | Path | What |
 | --- | --- |
-| `server/` | Go backend. `main.go` routes, `auth.go`, `admin.go`, `docs.go` (sync hub), `versions.go` (history), `files.go` (drive), `search.go` (index), `mail.go`, `calendar.go`, `chat.go`, `meet.go`, `tls.go` (ACME), `web.go`, `convert.go` (pandoc), `demo.go` (daily demo reset; its story and files in `server/demo/`). The public API: `api.go` (the operation table), `mailapi.go`, `calapi.go`, `chatapi.go`, `content.go` with `engine.go` (document content), `tokens.go`, `oauth.go`, `mcp.go`, `openapi.go`, `schema.go`. |
+| `server/` | Go backend. `main.go` routes, `auth.go`, `admin.go`, `docs.go` (sync hub), `versions.go` (history), `files.go` (drive), `search.go` (index), `mail.go`, `groups.go` (shared inboxes), `calendar.go`, `chat.go`, `meet.go`, `tls.go` (ACME), `web.go`, `convert.go` (pandoc), `demo.go` (daily demo reset; its story and files in `server/demo/`). The public API: `api.go` (the operation table), `mailapi.go`, `calapi.go`, `chatapi.go`, `content.go` with `engine.go` (document content), `tokens.go`, `oauth.go`, `mcp.go`, `openapi.go`, `schema.go`. |
 | `web/` | Preact app. `src/lib/` data layers (`store`, `api`, `sync`, `mail`, `calendar`, `contacts`, `files`, `search`, `matrix`), `src/apps/` screens, `src/sw.js` offline shell. `src/headless/` builds the app's document code into the content engine (`dist-headless/engine.mjs`). |
 | `deploy/` | `deploy.sh` (build and ship), `install.sh` (server side, idempotent), nginx and systemd files, `coexist-k3s.sh` (shared demo box only). |
 | `dev/` | `mail.sh` (a loopback mail engine), `run.sh` (build and run a checkout locally). |
@@ -102,6 +102,7 @@ Check a deployment:
 
 ```sh
 OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... node tests/e2e.cjs
+OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... OS_E2E_COLLEAGUE_PASS=... node tests/e2e-groups.cjs
 OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... node tests/perf.cjs
 OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... MCP_SDK=.../node_modules/@modelcontextprotocol/sdk node tests/e2e-api.cjs
 ```
@@ -112,10 +113,20 @@ client, including the OAuth flow) without a browser.
 ## What it includes
 
 - Organisations with owner, administrator and member roles; a free plan
-  (5 people, 5 GB, 1 custom domain, mail only to addresses this installation
-  hosts) and a larger one that can mail anyone, switched by the platform
-  operator. Admins add people (temporary password, replaced at first sign-in),
-  change roles, suspend, reset passwords and remove.
+  (5 people, 5 GB, 1 custom domain, 5 groups, mail only to addresses this
+  installation hosts) and a larger one (250 people and groups) that can mail
+  anyone, switched by the platform operator. Admins add people (temporary
+  password, replaced at first sign-in), change roles, suspend, reset
+  passwords and remove.
+- Groups: shared inboxes with an address of their own, like sales@. Anyone
+  can write to one, people outside the organisation included, unless an
+  administrator limits it to the organisation or to the group's members.
+  Members are people or agents, as viewers (read), users (also send and
+  reply as the group) or group admins (also manage viewers and users).
+  Members see each group in Mail beside their own mailbox, with unread
+  counts, search, a choice of sender when writing, and who in the group has
+  read and answered each conversation. Groups are listed in Contacts and
+  complete in address fields.
 - Custom domains for the web address and for mail, verified against DNS, with
   certificates issued automatically.
 - Mail: folders, conversations, search, compose with attachments, reply and

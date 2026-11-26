@@ -200,8 +200,9 @@ export function deleteContact(card) {
 
 // --- address completion -----------------------------------------------------
 
-// addressBook: everyone an address field can complete to — colleagues first,
-// then the person's own contacts — without duplicates.
+// addressBook: everyone an address field can complete to — colleagues and
+// the organisation's groups first, then the person's own contacts — without
+// duplicates.
 export const addressBook = computed(() => {
   const seen = new Set()
   const out = []
@@ -212,6 +213,7 @@ export const addressBook = computed(() => {
     out.push({ name: name || '', email, kind, id })
   }
   for (const p of people.value) if (p.status !== 'suspended') add(p.name, p.email, 'colleague', p.id)
+  for (const g of boot.value?.groups || []) add(g.name, g.email, 'group', g.id)
   for (const c of cards.value) for (const e of emailsOf(c)) add(nameOf(c), e, 'contact', c.id)
   return out
 })

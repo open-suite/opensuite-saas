@@ -30,7 +30,32 @@
     { "key": "webinar", "title": "Launch webinar", "owner": "ada" },
     { "key": "pilots", "title": "Pilot customer calls", "owner": "grace" }
   ],
+  "groups": [
+    {
+      "key": "sales", "login": "sales", "name": "Sales", "posting": "anyone",
+      "description": "Questions from workshops about Loom: prices, the pilot and orders.",
+      "members": [["ada", "admin"], ["grace", "user"]]
+    }
+  ],
   "mail": [
+    {
+      "key": "sales-quote", "from": "Tom Okafor <tom.okafor@okafor-joinery.example>", "to": ["sales"], "day": -2, "time": "10:24", "subject": "A quote for a team of 14",
+      "readBy": ["grace", "ada"], "repliedBy": ["grace"],
+      "body": "Hello,\n\nWe're a joinery workshop in Leeds: 14 people, two benches and a spray booth. A friend at Hale & Co showed us Loom and we'd like a quote for the whole team.\n\nTwo questions: can the spray booth be planned as a bench of its own, and is there a discount for paying a year up front?\n\nThanks,\nTom Okafor\nOkafor Joinery"
+    },
+    {
+      "key": "sales-quote-2", "replyTo": "sales-quote", "from": "sales", "to": ["Tom Okafor <tom.okafor@okafor-joinery.example>"], "day": -2, "time": "15:02", "subject": "Re: A quote for a team of 14",
+      "readBy": ["grace"],
+      "body": "Hi Tom,\n\nThanks for getting in touch. Yes: anything with its own queue of jobs can be a bench in Loom, a spray booth included.\n\nThe price is £29 per workshop per month, whatever the size of the team, and paying for a year up front gives you two months free.\n\nWould Thursday at 11:00 suit you for a 20-minute look at the planner with your own jobs in it?\n\nBest wishes,\nGrace Hopper\nAnalytical Engines"
+    },
+    {
+      "key": "sales-pilot", "from": "Marta Nowak <marta@nowak-ceramics.example>", "to": ["sales"], "day": -1, "time": "09:41", "subject": "Is the pilot still open?", "unread": true,
+      "body": "Hi,\n\nI run a small ceramics studio: five people and two kilns. Are you still taking workshops into the Loom pilot before the launch? Planning our firings is what we most need help with.\n\nMarta Nowak\nNowak Ceramics"
+    },
+    {
+      "key": "sales-invoice", "from": "Jonas Hale <jonas@haleandco.example>", "to": ["sales"], "day": -1, "time": "18:05", "subject": "From the pilot to a paid plan", "unread": true,
+      "body": "Good evening,\n\nOur pilot ends this month and we'd like to carry on without a gap. Could you send the invoice to accounts@haleandco.example, with our VAT number on it? It's on our last order.\n\nAll the best,\nJonas Hale\nHale & Co"
+    },
     {
       "key": "pricing", "from": "ada", "to": ["grace"], "day": -3, "time": "09:12", "subject": "Launch pricing",
       "body": "Hi Grace,\n\nI've put £29 per workshop per month in the brief. My reasoning: it's less than the cost of one late delivery, and it's an easy yes for a workshop owner without asking a partner first.\n\nCould you pull the pilot usage numbers before we decide? I'd like to know how many people in each workshop actually use Loom day to day.\n\nAda"

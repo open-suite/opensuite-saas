@@ -1,8 +1,10 @@
-// Contacts: the person's own address book beside the organisation's people.
+// Contacts: the person's own address book beside the organisation's people
+// and groups.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ArrowLeft, Building2, Download, Mail as MailIcon, MapPin, MoreHorizontal, Pencil, Phone, Plus, Search, StickyNote, Trash2, Upload, Users, X } from 'lucide-preact'
 import './contacts.css'
-import { people, org, user, toast } from '../lib/store.js'
+import { people, peopleById, org, user, toast } from '../lib/store.js'
+import { groups, roleName } from '../lib/groups.js'
 import { query, navigate } from '../lib/router.js'
 import { cx, download, pickFile } from '../lib/util.js'
 import { Avatar, Button, Empty, IconButton, Menu } from '../ui.jsx'
@@ -117,6 +119,35 @@ function Detail({ sel, onEdit, onBack, onGone }) {
   )
 }
 
+// GroupDetail shows a group from the directory: what it is for and who
+// answers it.
+function GroupDetail({ group: g, onBack }) {
+  return (
+    <div class="ct-detail">
+      <div class="ct-bar">
+        <IconButton icon={ArrowLeft} label="Back to list" class="only-narrow" onClick={onBack} />
+        <span class="grow" />
+        <Button icon={MailIcon} onClick={() => writeTo(g.email)}>Write an email</Button>
+      </div>
+      <div class="ct-body">
+        <div class="ct-hero">
+          <Avatar name={g.name} id={g.id} size={72} />
+          <div style={{ minWidth: 0 }}>
+            <h1>{g.name}</h1>
+            {g.description && <p class="muted">{g.description}</p>}
+            <span class="badge badge-accent" style={{ marginTop: 6 }}>Group in {org.value?.name}{g.role ? ' · ' + roleName[g.role].toLowerCase() : ''}</span>
+          </div>
+        </div>
+        <Line icon={MailIcon}><a href={'/mail?compose=1&to=' + encodeURIComponent(g.email)}>{g.email}</a></Line>
+        <Line icon={Users}>
+          {g.members.length === 0 && <span class="muted">No members yet</span>}
+          {g.members.map((m) => <div key={m.id}>{peopleById.value[m.id]?.name}<span class="muted"> · {roleName[m.role]}</span></div>)}
+        </Line>
+      </div>
+    </div>
+  )
+}
+
 export default function Contacts() {
   const list = cards.value
   const folks = people.value
@@ -127,7 +158,8 @@ export default function Contacts() {
   const s = q.trim().toLowerCase()
   const mine = useMemo(() => (s ? list.filter((c) => (nameOf(c) + ' ' + emailsOf(c).join(' ') + ' ' + companyOf(c) + ' ' + phonesOf(c).join(' ')).toLowerCase().includes(s)) : list), [list, s])
   const theirs = useMemo(() => folks.filter((p) => p.status !== 'suspended' && (!s || (p.name + ' ' + p.email).toLowerCase().includes(s))), [folks, s])
-  const current = sel && (sel.kind === 'card' ? list.find((c) => c.id === sel.id) : folks.find((p) => p.id === sel.id))
+  const shared = useMemo(() => groups.value.filter((g) => !s || (g.name + ' ' + g.email + ' ' + g.description).toLowerCase().includes(s)), [groups.value, s])
+  const current = sel && (sel.kind === 'card' ? list.find((c) => c.id === sel.id) : sel.kind === 'group' ? groups.value.find((g) => g.id === sel.id) : folks.find((p) => p.id === sel.id))
 
   // A link from search names the contact to show.
   useEffect(() => {
@@ -186,6 +218,8 @@ export default function Contacts() {
           {mine.length > shown.length && <div class="more-row"><Button onClick={() => setMore(true)}>Show all {mine.length}</Button></div>}
           <div class="ct-head">{org.value?.name}<span>{theirs.length}</span></div>
           {theirs.map((p) => row('person', p.id, p.name, p.email))}
+          {shared.length > 0 && <div class="ct-head">Groups<span>{shared.length}</span></div>}
+          {shared.map((g) => row('group', g.id, g.name, g.email))}
         </div>
       </section>
       <section class="ct-pane">
@@ -197,6 +231,8 @@ export default function Contacts() {
             // A new contact gets its lasting id once the server has it.
             done?.then((id) => id && setSel((cur) => (cur?.id === saved.id ? { kind: 'card', id } : cur)))
           }} />
+        ) : current && sel.kind === 'group' ? (
+          <GroupDetail group={current} onBack={() => setSel(null)} />
         ) : current ? (
           <Detail sel={{ kind: sel.kind, item: current }} onEdit={() => setEditing(current)} onBack={() => setSel(null)} onGone={() => setSel(null)} />
         ) : (

@@ -184,7 +184,56 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
 - **Demo reset** revokes every token and connection of the demo
   organisation's seed people and removes agents with the other members.
 - **Tests**: `server/api_test.go`, `content_test.go` (needs Node and the
-  web build) and `tests/e2e-api.cjs` (needs `MCP_SDK`).
+  web build), `groups_test.go` and `tests/e2e-api.cjs` (needs `MCP_SDK`).
+
+## Groups: shared inboxes (added 2026-11-26)
+
+- **In the engine** (`server/groups.go`) a group is an `x:Account` of
+  `@type: Group` with its own folders; it has no credentials. Users and
+  group admins are engine members (`memberGroupIds/<group>` on their own
+  account): the engine then lists the group's account in their session with
+  full rights, and lets them submit from its address. Viewers are not
+  members; the suite shares each of the group's folders with them
+  (`shareWith`, `mayReadItems` + `maySetSeen`). So the engine enforces the
+  roles too; the suite never holds a credential for a group.
+- **One proxy rule.** Every mail endpoint (`/api/mail/jmap`, blob, upload,
+  `files/from-mail`, `files/{id}/to-mail`, and every `/api/v1/mail/*`
+  operation through `mailCall`) resolves `?group=` with `mailAccount` and
+  pins calls to that account. `groupCallOK` decides by role: viewers read
+  and set only `$seen` and their own read mark; nobody changes a group's
+  folders, identity, filters or calendars, or imports into it. A group's
+  standard folders are all made at creation, so nothing needs to create one.
+  `shareWith` is refused from browsers for folders too (`groupwareCallOK`).
+- **Senders.** The engine checks only the envelope, so `sendersAllowed`
+  (in `callsAllowed`, beside `recipientsAllowed`) requires every submitted
+  message's From to be the address of the mailbox it is sent from; an
+  imported message (an invitation) is read back from the engine to check.
+  A member's own account also lists the group's address as an identity;
+  sending as the group from there is refused, so the copy lands in the
+  group's Sent.
+- **Who may write** is a Sieve script named `opensuite` on the group's
+  account (`groupPolicy`). Mail from other providers carries the
+  `Authentication-Results` header the engine adds on port 25; local
+  submissions do not, and their envelope sender is the authenticated
+  account's. Restricted groups discard outside mail (no backscatter) and
+  reject colleagues who may not write (they get a bounce saying why). The
+  allowed list is rewritten when people or members change
+  (`refreshPolicies`); `policyMu` serialises writes, because the engine
+  refuses overlapping edits of one script.
+- **Read and replied marks** are keywords on the group's messages,
+  `os-read-<member id>` and `os-replied-<member id>` (with `$answered`). The
+  API reports them as `readBy` and `repliedBy`. A user could set someone
+  else's mark: like the comment role, a courtesy between colleagues.
+- **Addresses** of people and groups are one space (`addressTaken`), with
+  the same reserved names. Plans allow 5 (free) or 250 (team) groups.
+- **Demo reset** deletes the demo organisation's groups and makes the
+  seed's (`groups` in `demo/seed.json`), importing their mail through a
+  member's account. The engine refuses to delete a group that still has
+  members, so `groupDeleteMail` drops memberships in the same call.
+- **Web**: `lib/mail.js` makes one box per mailbox (`own`, `boxFor(group)`)
+  and routes pushes by account id; the old single-mailbox exports remain
+  for home, calendar and search. `apps/groups.jsx` is Admin → Groups and the
+  settings dialog Mail opens for group admins. `tests/e2e-groups.cjs`.
 
 ## Engines: facts verified on 2026-11-21
 
@@ -195,8 +244,9 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   interfaces) in recovery mode; `install.sh` firewalls it and runs
   `opensuite mail-setup`. Account id in management equals the JMAP account id.
   Creating an existing account returns `primaryKeyViolation` with the id.
-  The browser never talks to it: `/api/mail/jmap` pins `accountId` and allows
-  mail methods only (`server/mail.go`, tested).
+  The browser never talks to it: `/api/mail/jmap` pins `accountId` (the
+  person's own, or a group's they belong to) and allows mail methods only
+  (`server/mail.go`, tested).
 - **Tuwunel 2.0.0** release assets live under the tag `v2.0.0-assets`. Users
   are created by JWT login (`org.matrix.login.jwt`); nginx blocks
   `/login`, `/register`, the user directory and the public room list.

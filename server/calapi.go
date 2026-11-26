@@ -637,7 +637,7 @@ func (s *Server) sendCalendarMail(w http.ResponseWriter, r *http.Request, u *Use
 	if boxes == nil {
 		return false
 	}
-	identity := s.identityOf(w, r, u)
+	identity := s.identityOf(w, r, u, ownMailbox(u))
 	if identity == "" {
 		return false
 	}
@@ -647,7 +647,7 @@ func (s *Server) sendCalendarMail(w http.ResponseWriter, r *http.Request, u *Use
 			fail(w, 500, "The invitation couldn't be written.")
 			return false
 		}
-		blob, err := s.mailUpload(r.Context(), u, raw)
+		blob, err := s.mailUpload(r.Context(), u, u.MailID, raw)
 		if err != nil {
 			fail(w, 502, "The mail service refused the invitation.")
 			return false

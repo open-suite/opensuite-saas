@@ -378,7 +378,7 @@ async function submit({ to, raw }) {
   const up = await api('POST', '/api/mail/upload', new Blob([raw]), { type: 'message/rfc822', passive: true })
   const sent = boxByRole('sent')?.id || (await ensureMailbox('sent', 'Sent'))
   let idn = identity.value?.id
-  if (!idn) idn = (await jm([['Identity/get', {}]]))[0].list?.[0]?.id
+  if (!idn) idn = (await jm([['Identity/get', {}]]))[0].list?.find((i) => i.email.toLowerCase() === from.email.toLowerCase())?.id
   const [imp, sub] = await jm([
     ['Email/import', { emails: { m: { blobId: up.blobId, mailboxIds: { [sent]: true }, keywords: { $seen: true } } } }],
     // The calendar is the record of an invitation; no copy stays in Sent.

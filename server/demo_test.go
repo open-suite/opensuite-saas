@@ -61,8 +61,23 @@ func TestDemoSeed(t *testing.T) {
 			t.Errorf("event %s: unknown room, owner or day, or no length", e.Title)
 		}
 	}
+	for _, g := range seed.Groups {
+		if validUsername(g.Login) != "" || !slices.Contains(postingRules, g.Posting) || keys[g.Key] {
+			t.Errorf("group %s: bad address, rule or key", g.Name)
+		}
+		for _, m := range g.Members {
+			if !keys[m[0]] || !slices.Contains(groupRoles, m[1]) {
+				t.Errorf("group %s: unknown member %s or role %s", g.Name, m[0], m[1])
+			}
+		}
+	}
 	sent := map[string]bool{}
 	for _, m := range seed.Mail {
+		for _, who := range append(append([]string{}, m.ReadBy...), m.RepliedBy...) {
+			if !keys[who] {
+				t.Errorf("mail %s: marked by unknown %s", m.Key, who)
+			}
+		}
 		if m.ReplyTo != "" && !sent[m.ReplyTo] {
 			t.Errorf("mail %s answers %s, which comes later or not at all", m.Key, m.ReplyTo)
 		}
@@ -113,13 +128,14 @@ type fakeMail struct {
 	methods []string
 	emptied map[string]bool
 	gone    []string // accounts destroyed
+	imports []string // accounts mail was imported into
 	n       int
 }
 
 func (f *fakeMail) reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.users, f.methods, f.gone = map[string]bool{}, nil, nil
+	f.users, f.methods, f.gone, f.imports = map[string]bool{}, nil, nil, nil
 }
 
 func (f *fakeMail) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +194,11 @@ func (f *fakeMail) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			var ids []string
 			json.Unmarshal(args["destroy"], &ids)
 			f.gone = append(f.gone, ids...)
+		}
+		if name == "Email/import" {
+			var account string
+			json.Unmarshal(args["accountId"], &account)
+			f.imports = append(f.imports, account)
 		}
 		out = append(out, []any{name, res, "0"})
 	}
@@ -242,6 +263,13 @@ func TestDemoReset(t *testing.T) {
 		s.r.QueryRow(`SELECT mail_id FROM users WHERE id = ?`, carol.ID).Scan(&carolMail)
 		s.r.QueryRow(`SELECT mail_id FROM users WHERE id = ?`, agent.ID).Scan(&agentMail)
 	}
+	var stray Group
+	if code := ada.do("POST", "/api/v1/groups", map[string]string{"name": "Stray", "username": "stray"}, &stray); code != 200 {
+		t.Fatalf("a visitor's group: %d", code)
+	}
+	ada.do("PUT", "/api/v1/groups/"+stray.ID+"/members/"+carol.ID, map[string]string{"role": "user"}, nil)
+	var strayMail string
+	s.r.QueryRow(`SELECT mail_id FROM mail_groups WHERE id = ?`, stray.ID).Scan(&strayMail)
 
 	engine.reset()
 	if err := s.resetDemo(context.Background()); err != nil {
@@ -373,10 +401,25 @@ func TestDemoReset(t *testing.T) {
 		}
 	}
 	slices.Sort(engine.gone)
-	removed := []string{carolMail, agentMail}
+	removed := []string{carolMail, agentMail, strayMail}
 	slices.Sort(removed)
 	if !slices.Equal(engine.gone, removed) || slices.Contains(removed, bobMail) {
-		t.Errorf("mail accounts removed: %v (carol %s, agent %s)", engine.gone, carolMail, agentMail)
+		t.Errorf("mail accounts removed: %v (carol %s, agent %s, stray group %s)", engine.gone, carolMail, agentMail, strayMail)
+	}
+	// Groups: exactly the seed's, with its members, and its mail imported
+	// into the group's own mailbox.
+	var groups struct{ Items []Group }
+	grace.do("GET", "/api/v1/groups", nil, &groups)
+	if len(groups.Items) != 1 || groups.Items[0].Email != "sales@office.test" || len(groups.Items[0].Members) != 2 || groups.Items[0].Role != "user" {
+		t.Fatalf("groups after the reset = %+v", groups.Items)
+	}
+	salesMail := groups.Items[0].AccountID
+	imported := false
+	for _, c := range engine.imports {
+		imported = imported || c == salesMail
+	}
+	if !imported {
+		t.Errorf("no mail imported into the group's mailbox %s: %v", salesMail, engine.imports)
 	}
 	for _, m := range engine.methods {
 		if strings.HasPrefix(m, "EmailSubmission") {

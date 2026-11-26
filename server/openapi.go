@@ -19,7 +19,7 @@ const apiIntro = "Everything a member can do in Open Suite, a program can do thr
 	"Errors are JSON `{\"error\": \"...\"}` with an HTTP status. Lists are paged: pass the `next` value of one page as `cursor` to get the next. " +
 	"The same operations are tools of the MCP server at `/mcp`."
 
-var tagOrder = []string{"Account", "People", "Mail", "Calendar", "Contacts", "Chat", "Meetings", "Files", "Documents", "Document content",
+var tagOrder = []string{"Account", "People", "Groups", "Mail", "Calendar", "Contacts", "Chat", "Meetings", "Files", "Documents", "Document content",
 	"Spreadsheet content", "Presentation content", "Search", "Administration"}
 
 func (s *Server) openAPI(r *http.Request) map[string]any {

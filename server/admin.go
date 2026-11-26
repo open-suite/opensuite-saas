@@ -148,6 +148,10 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, u *Use
 		return
 	}
 	email := in.Username + "@" + in.Domain
+	if s.addressTaken(email) {
+		fail(w, 409, "That address is taken.")
+		return
+	}
 	id := newID(12)
 	if in.Agent {
 		// No password at all: an empty hash never matches one.
@@ -157,7 +161,7 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, u *Use
 			fail(w, 409, "That address is taken.")
 			return
 		}
-		go s.provision(s.userByID(id))
+		go s.joined(s.userByID(id))
 		ok(w, map[string]any{"id": id, "email": email, "agent": true})
 		return
 	}
@@ -168,8 +172,15 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, u *Use
 		fail(w, 409, "That address is taken.")
 		return
 	}
-	go s.provision(s.userByID(id))
+	go s.joined(s.userByID(id))
 	ok(w, map[string]any{"id": id, "email": email, "password": pw})
+}
+
+// joined sets up a new member's mailbox and chat account, then lets the
+// organisation's groups that only take mail from inside hear from them.
+func (s *Server) joined(u *User) {
+	s.provision(u)
+	s.refreshPolicies(u.OrgID)
 }
 
 func itoa(n int) string {
@@ -285,6 +296,7 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request, u *Use
 	s.w.Exec(`DELETE FROM users WHERE id = ?`, t.ID)
 	go s.chatDeactivate(t)
 	go s.mailDeleteAccount(t)
+	go s.refreshPolicies(u.OrgID)
 	ok(w, map[string]bool{"ok": true})
 }
 
@@ -321,9 +333,9 @@ func (s *Server) handleDomainAdd(w http.ResponseWriter, r *http.Request, u *User
 func (s *Server) handleDomainDelete(w http.ResponseWriter, r *http.Request, u *User) {
 	d := strings.ToLower(r.PathValue("domain"))
 	var n int
-	s.r.QueryRow(`SELECT count(*) FROM users WHERE org_id = ? AND email LIKE ?`, u.OrgID, "%@"+d).Scan(&n)
+	s.r.QueryRow(`SELECT (SELECT count(*) FROM users WHERE org_id = ?1 AND email LIKE ?2) + (SELECT count(*) FROM mail_groups WHERE org_id = ?1 AND email LIKE ?2)`, u.OrgID, "%@"+d).Scan(&n)
 	if n > 0 {
-		fail(w, 409, "People still have addresses on this domain. Remove them first.")
+		fail(w, 409, "People or groups still have addresses on this domain. Remove them first.")
 		return
 	}
 	res, _ := s.w.Exec(`DELETE FROM domains WHERE domain = ? AND org_id = ?`, d, u.OrgID)

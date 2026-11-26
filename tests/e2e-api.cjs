@@ -10,7 +10,7 @@
 //   OS_BASE=https://office.example OS_E2E_USER=ada OS_E2E_PASS=... \
 //   MCP_SDK=/path/to/node_modules/@modelcontextprotocol/sdk node tests/e2e-api.cjs [step ...]
 //
-// Steps: tokens docs sheets slides files meet mail calendar contacts chat search mcp
+// Steps: tokens docs sheets slides files meet mail groups calendar contacts chat search mcp
 // (default: all). Chat is skipped when the server has no chat engine (a
 // development machine); everything else must pass.
 const assert = require('assert')
@@ -262,6 +262,34 @@ const zip = (buf) => buf.subarray(0, 2).toString() === 'PK'
         await api('DELETE', `/api/v1/mail/messages/${m.id}?permanent=true`)
       }
       ok('mail: sent with attachments (one from Files), read, attachment downloaded and filed, replied, forwarded, flagged, archived, draft saved, replaced and sent')
+    }
+
+    if (want('groups')) {
+      // A group with the signed-in member as its only user: they write to it,
+      // read it there, answer as the group (back to themselves) and see
+      // their mark on what they answered.
+      const g = await api('POST', '/api/v1/groups', { name: 'API group ' + stamp, username: 'api-group-' + stamp, description: 'Made by the API check.' })
+      cleanup.push(['DELETE', '/api/v1/groups/' + g.id])
+      await api('POST', '/api/v1/groups', { name: 'Taken', username: ADDR.split('@')[0] }, { expect: 409 })
+      const mine = await api('PUT', `/api/v1/groups/${g.id}/members/${me.user.id}`, { role: 'user' })
+      assert.equal(mine.role, 'user')
+      assert.ok((await api('GET', '/api/v1/groups')).items.some((x) => x.id === g.id && x.email === g.email))
+      const subject = 'To the group ' + stamp
+      await api('POST', '/api/v1/mail/send', { to: [g.email], subject, text: 'Written to a group through the API.' })
+      const got = await until('the message in the group', async () => (await api('GET', `/api/v1/mail/messages?group=${g.id}&q=` + encodeURIComponent(stamp))).items.find((m) => m.subject === subject))
+      await api('PATCH', `/api/v1/mail/messages/${got.id}?group=${g.id}`, { unread: false })
+      await api('POST', `/api/v1/mail/messages/${got.id}/reply?group=${g.id}`, { text: 'Answered as the group.' })
+      const answer = await until('the answer from the group', async () => (await api('GET', '/api/v1/mail/messages?mailbox=inbox&q=' + encodeURIComponent(stamp))).items.find((m) => m.subject === 'Re: ' + subject))
+      assert.equal(answer.from[0].email, g.email)
+      const marked = await api('GET', `/api/v1/mail/messages/${got.id}?group=${g.id}`)
+      assert.deepEqual([marked.readBy, marked.repliedBy], [[me.user.id], [me.user.id]])
+      await api('PUT', `/api/v1/groups/${g.id}/members/${me.user.id}`, { role: 'viewer' })
+      const refused = await api('POST', `/api/v1/mail/send?group=${g.id}`, { to: [ADDR], subject: 'x', text: 'x' }, { expect: 403 })
+      assert.match(refused.error, /viewer/)
+      for (const m of (await api('GET', '/api/v1/mail/messages?q=' + encodeURIComponent(stamp) + '&limit=50')).items) {
+        await api('DELETE', `/api/v1/mail/messages/${m.id}?permanent=true`)
+      }
+      ok(`groups: ${g.email} made, written to, read, answered as the group with read and reply marks; a viewer cannot send as it`)
     }
 
     if (want('calendar')) {

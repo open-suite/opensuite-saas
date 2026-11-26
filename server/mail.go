@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -36,11 +37,15 @@ type jmapResult struct {
 
 // jmapAdmin runs management calls as the engine administrator.
 func (s *Server) jmapAdmin(ctx context.Context, base string, calls ...jmapCall) ([]jmapResult, error) {
+	return s.jmapAdminUsing(ctx, base, jmapCore, calls...)
+}
+
+func (s *Server) jmapAdminUsing(ctx context.Context, base string, using []string, calls ...jmapCall) ([]jmapResult, error) {
 	mc := make([][]any, len(calls))
 	for i, c := range calls {
 		mc[i] = []any{c.name, c.args, itoa(i)}
 	}
-	body, _ := json.Marshal(map[string]any{"using": jmapCore, "methodCalls": mc})
+	body, _ := json.Marshal(map[string]any{"using": using, "methodCalls": mc})
 	req, err := http.NewRequestWithContext(ctx, "POST", base+"/jmap/", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -337,8 +342,11 @@ func (s *Server) moveAddress(ctx context.Context, from, to string) error {
 			return errf("mail engine refused the move: %s", res[0].Args)
 		}
 	}
-	_, err := s.w.Exec(`UPDATE users SET email = ? WHERE id = ?`, to, id)
-	return err
+	if _, err := s.w.Exec(`UPDATE users SET email = ? WHERE id = ?`, to, id); err != nil {
+		return err
+	}
+	s.refreshPolicies(u.OrgID) // restricted groups now hear from the new address
+	return nil
 }
 
 func (s *Server) mailDeleteAccount(u *User) {
@@ -441,11 +449,17 @@ var jmapUsing = []string{"urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail
 	"urn:ietf:params:jmap:calendars", "urn:ietf:params:jmap:calendars:parse", "urn:ietf:params:jmap:contacts", "urn:ietf:params:jmap:contacts:parse"}
 
 // handleJMAP forwards a mail request for the signed-in person. It pins every
-// call to their own mailbox and to mail methods only, so the engine's
-// management surface is unreachable from a browser.
+// call to one mailbox, their own or with ?group= a group's they belong to,
+// and to mail methods only, so the engine's management surface is
+// unreachable from a browser.
 func (s *Server) handleJMAP(w http.ResponseWriter, r *http.Request, u *User) {
 	if !u.MailReady {
 		fail(w, 503, "Your mailbox is being set up.")
+		return
+	}
+	acct, code, msg := s.mailAccount(r, u)
+	if code != 0 {
+		fail(w, code, msg)
 		return
 	}
 	var in struct {
@@ -475,17 +489,37 @@ func (s *Server) handleJMAP(w http.ResponseWriter, r *http.Request, u *User) {
 			fail(w, 403, "method not available")
 			return
 		}
-		id, _ := json.Marshal(u.MailID)
+		id, _ := json.Marshal(acct.ID)
 		args["accountId"] = id
 		delete(args, "fromAccountId")
 		calls = append(calls, []any{name, args, c[2]})
 	}
-	if !s.recipientsAllowed(u, in.MethodCalls) {
-		fail(w, 403, "Your organisation's plan sends mail only to addresses on Open Suite.")
+	if code, msg := s.callsAllowed(r.Context(), u, acct, in.MethodCalls); code != 0 {
+		fail(w, code, msg)
 		return
 	}
 	body, _ := json.Marshal(map[string]any{"using": jmapUsing, "methodCalls": calls})
 	s.mailForward(w, r, u, "POST", "/jmap/", bytes.NewReader(body), "application/json", nil)
+}
+
+// callsAllowed applies the rules every request that reaches a mailbox
+// follows, from the app or the API: what the caller's role in a group allows,
+// whom the plan lets them mail, and that what they send is from the mailbox
+// they send it from.
+func (s *Server) callsAllowed(ctx context.Context, u *User, acct *mailAccount, calls [][]json.RawMessage) (int, string) {
+	if !groupCallsOK(acct, u.ID, calls) {
+		if acct.Role == "viewer" {
+			return 403, viewerRefused
+		}
+		return 403, "That is not available in a group's mailbox."
+	}
+	if !s.recipientsAllowed(u, calls) {
+		return 403, "Your organisation's plan sends mail only to addresses on Open Suite."
+	}
+	if !s.sendersAllowed(ctx, u, acct, calls) {
+		return 403, "Mail can only be sent from the address of the mailbox it is sent from."
+	}
+	return 0, ""
 }
 
 type jmapAddr struct {
@@ -589,6 +623,88 @@ func (s *Server) recipientsAllowed(u *User, calls [][]json.RawMessage) bool {
 	return true
 }
 
+// sendersAllowed checks that every message a request sends is from the
+// address of the mailbox it is sent from: a person's own from their own
+// mailbox, a group's from the group's. The engine checks only the envelope,
+// so without this anyone could put a colleague's or a group's address in
+// From. As for recipientsAllowed, a message sent must be made in the same
+// request; one imported whole (an invitation) is read back from the engine.
+func (s *Server) sendersAllowed(ctx context.Context, u *User, acct *mailAccount, calls [][]json.RawMessage) bool {
+	created := map[string][]jmapAddr{} // From of messages made with Email/set
+	imported := map[string]string{}    // blob of messages made with Email/import
+	var sent []string
+	for _, c := range calls {
+		var name string
+		var args struct {
+			Create map[string]struct {
+				From    []jmapAddr
+				EmailID string `json:"emailId"`
+			} `json:"create"`
+			Emails map[string]struct {
+				BlobID string `json:"blobId"`
+			} `json:"emails"`
+		}
+		json.Unmarshal(c[0], &name)
+		json.Unmarshal(c[1], &args)
+		switch name {
+		case "Email/set":
+			for id, e := range args.Create {
+				created[id] = e.From
+			}
+		case "Email/import":
+			for id, e := range args.Emails {
+				imported[id] = e.BlobID
+			}
+		case "EmailSubmission/set":
+			for _, sub := range args.Create {
+				sent = append(sent, sub.EmailID)
+			}
+		}
+	}
+	for _, ref := range sent {
+		id, isRef := strings.CutPrefix(ref, "#")
+		from, made := created[id]
+		blob, wasImported := imported[id]
+		switch {
+		case !isRef || made == wasImported:
+			return false
+		case made:
+			if len(from) != 1 || !strings.EqualFold(from[0].Email, acct.Email) {
+				return false
+			}
+		case !strings.EqualFold(s.importedFrom(ctx, u, acct, blob), acct.Email):
+			return false
+		}
+	}
+	return true
+}
+
+// importedFrom reads the From address of a message uploaded for import.
+func (s *Server) importedFrom(ctx context.Context, u *User, acct *mailAccount, blob string) string {
+	req, err := http.NewRequestWithContext(ctx, "GET", s.cfg.MailURL+"/jmap/download/"+url.PathEscape(acct.ID)+"/"+url.PathEscape(blob)+"/m.eml?accept=message/rfc822", nil)
+	if err != nil {
+		return ""
+	}
+	req.SetBasicAuth(u.Email, u.MailSecret)
+	res, err := mailClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		return ""
+	}
+	m, err := mail.ReadMessage(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return ""
+	}
+	from, err := mail.ParseAddressList(m.Header.Get("From"))
+	if err != nil || len(from) != 1 {
+		return ""
+	}
+	return from[0].Address
+}
+
 func (s *Server) mailForward(w http.ResponseWriter, r *http.Request, u *User, method, path string, body io.Reader, ctype string, decorate func(http.Header)) {
 	req, err := http.NewRequestWithContext(r.Context(), method, s.cfg.MailURL+path, body)
 	if err != nil {
@@ -625,12 +741,17 @@ func (s *Server) handleMailBlob(w http.ResponseWriter, r *http.Request, u *User)
 		http.NotFound(w, r)
 		return
 	}
+	acct, code, msg := s.mailAccount(r, u)
+	if code != 0 {
+		fail(w, code, msg)
+		return
+	}
 	name := r.PathValue("name")
 	accept := r.URL.Query().Get("type")
 	if accept == "" {
 		accept = "application/octet-stream"
 	}
-	path := "/jmap/download/" + url.PathEscape(u.MailID) + "/" + url.PathEscape(r.PathValue("blob")) + "/" + url.PathEscape(name) + "?accept=" + url.QueryEscape(accept)
+	path := "/jmap/download/" + url.PathEscape(acct.ID) + "/" + url.PathEscape(r.PathValue("blob")) + "/" + url.PathEscape(name) + "?accept=" + url.QueryEscape(accept)
 	s.mailForward(w, r, u, "GET", path, nil, "", func(h http.Header) {
 		// Attachments are data. Only plain raster images may render inline.
 		h.Set("X-Content-Type-Options", "nosniff")
@@ -650,11 +771,20 @@ func (s *Server) handleMailUpload(w http.ResponseWriter, r *http.Request, u *Use
 		fail(w, 503, "Your mailbox is being set up.")
 		return
 	}
+	acct, code, msg := s.mailAccount(r, u)
+	if code != 0 {
+		fail(w, code, msg)
+		return
+	}
+	if !acct.maySend() {
+		fail(w, 403, viewerRefused)
+		return
+	}
 	ctype := r.Header.Get("Content-Type")
 	if ctype == "" {
 		ctype = "application/octet-stream"
 	}
-	s.mailForward(w, r, u, "POST", "/jmap/upload/"+url.PathEscape(u.MailID)+"/", http.MaxBytesReader(w, r.Body, 50<<20), ctype, nil)
+	s.mailForward(w, r, u, "POST", "/jmap/upload/"+url.PathEscape(acct.ID)+"/", http.MaxBytesReader(w, r.Body, 50<<20), ctype, nil)
 }
 
 // handleMailEvents relays the engine's change feed so new mail appears

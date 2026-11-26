@@ -14,6 +14,7 @@ import (
 	"net/mail"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -81,6 +82,9 @@ type messageSummary struct {
 	Flagged       bool          `json:"flagged"`
 	Draft         bool          `json:"draft"`
 	HasAttachment bool          `json:"hasAttachment"`
+	// In a group's mailbox: the members who have read it and who answered it.
+	ReadBy    []string `json:"readBy,omitempty"`
+	RepliedBy []string `json:"repliedBy,omitempty"`
 }
 
 type message struct {
@@ -108,11 +112,22 @@ func (e *jmapEmail) summary() messageSummary {
 			boxes = append(boxes, id)
 		}
 	}
-	return messageSummary{
+	sum := messageSummary{
 		ID: e.ID, ThreadID: e.ThreadID, Mailboxes: boxes, From: nonNil(e.From), To: nonNil(e.To), Cc: nonNil(e.Cc),
 		Subject: e.Subject, ReceivedAt: e.ReceivedAt, Preview: e.Preview, Unread: !e.Keywords["$seen"],
 		Flagged: e.Keywords["$flagged"], Draft: e.Keywords["$draft"], HasAttachment: e.HasAttachment,
 	}
+	for k, on := range e.Keywords {
+		if id, found := strings.CutPrefix(k, readMark("")); found && on {
+			sum.ReadBy = append(sum.ReadBy, id)
+		}
+		if id, found := strings.CutPrefix(k, replyMark("")); found && on {
+			sum.RepliedBy = append(sum.RepliedBy, id)
+		}
+	}
+	slices.Sort(sum.ReadBy)
+	slices.Sort(sum.RepliedBy)
+	return sum
 }
 
 func (e *jmapEmail) bodyOf(parts []jmapPart) string {
@@ -158,19 +173,30 @@ func (e *jmapEmail) full() message {
 	return m
 }
 
-// mailCall runs JMAP calls as the member, failing the request in words a
-// person can act on when the mailbox is not reachable.
+// mailCall runs JMAP calls as the member in the mailbox the request names
+// (their own, or a group's with `group`), under the same rules as the app's
+// requests, failing the request in words a person can act on when the
+// mailbox is not reachable.
 func (s *Server) mailCall(w http.ResponseWriter, r *http.Request, u *User, calls ...jmapCall) []jmapResult {
 	if !u.MailReady || s.cfg.MailURL == "" {
 		fail(w, 503, "The mailbox is being set up. Try again in a minute.")
+		return nil
+	}
+	acct, code, msg := s.mailAccount(r, u)
+	if code != 0 {
+		fail(w, code, msg)
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	for i := range calls {
 		if args, isMap := calls[i].args.(map[string]any); isMap {
-			args["accountId"] = u.MailID
+			args["accountId"] = acct.ID
 		}
+	}
+	if code, msg := s.callsAllowed(ctx, u, acct, rawCalls(calls)); code != 0 {
+		fail(w, code, msg)
+		return nil
 	}
 	res, err := s.jmapAs(ctx, u, jmapUsing, calls...)
 	if err != nil {
@@ -263,7 +289,9 @@ func (s *Server) mailOps() []*apiOp {
 		"attachments": attachments,
 	}
 	sent := object(js{"id": str("The sent message's id."), "threadId": str("")}, "id")
-	return []*apiOp{
+	group := query("group", str("Work in this group's shared mailbox instead of your own: its id or address (see list_groups). "+
+		"Viewers of a group can read and mark read; users and group admins can also send as the group, file and delete."))
+	ops := []*apiOp{
 		{Method: "GET", Path: "/api/v1/mail/mailboxes", ID: "list_mailboxes", Tag: "Mail", Summary: "List mail folders",
 			Desc: "Inbox, drafts, sent, archive, junk, trash and folders of your own, with counts.", Result: object(js{"items": array(ref("Mailbox"), "")}), H: s.handleMailboxes},
 		{Method: "GET", Path: "/api/v1/mail/messages", ID: "list_messages", Tag: "Mail", Summary: "List or search messages",
@@ -280,7 +308,7 @@ func (s *Server) mailOps() []*apiOp {
 		{Method: "GET", Path: "/api/v1/mail/threads/{id}", ID: "get_thread", Tag: "Mail", Summary: "Read a conversation",
 			Params: []apiParam{pathParam("id", "Thread id (threadId of a message).")}, Result: object(js{"id": str(""), "messages": array(ref("Message"), "Oldest first.")}), H: s.handleThread},
 		{Method: "POST", Path: "/api/v1/mail/send", ID: "send_mail", Tag: "Mail", Summary: "Send a message", Write: true,
-			Desc: "Sends from your own address and files a copy in Sent. On the free plan, mail can only go to addresses hosted on this installation.",
+			Desc: "Sends from your own address (or with `group` the group's) and files a copy in Sent. On the free plan, mail can only go to addresses hosted on this installation.",
 			Body: object(compose, "to", "subject"), Result: sent, H: s.handleSend},
 		{Method: "POST", Path: "/api/v1/mail/messages/{id}/reply", ID: "reply_to_message", Tag: "Mail", Summary: "Reply to a message", Write: true,
 			Desc:   "Replies to the sender (or Reply-To), or with `all` to everyone else on it too, in the same conversation, quoting the original.",
@@ -311,6 +339,10 @@ func (s *Server) mailOps() []*apiOp {
 			Body:   object(js{"name": str("File name."), "type": str("Content type."), "folder": str("Folder id; absent for your top level.")}, "name"),
 			Result: ref("Node"), H: s.handleAttachmentSave},
 	}
+	for _, op := range ops {
+		op.Params = append(op.Params, group)
+	}
+	return ops
 }
 
 func (s *Server) handleMailboxes(w http.ResponseWriter, r *http.Request, u *User) {
@@ -504,7 +536,7 @@ func (s *Server) resolveAttachments(w http.ResponseWriter, r *http.Request, u *U
 	for _, a := range m.Attachments {
 		switch {
 		case a.FileID != "":
-			p, code, msg := s.fileToMail(r.Context(), u, a.FileID)
+			p, code, msg := s.fileToMail(r, u, a.FileID)
 			if code != 0 {
 				fail(w, code, msg)
 				return false
@@ -523,8 +555,9 @@ func (s *Server) resolveAttachments(w http.ResponseWriter, r *http.Request, u *U
 	return true
 }
 
-// emailObject is the message as the app builds it in lib/mail.js send().
-func (s *Server) emailObject(u *User, m *outgoing, drafts string) (map[string]any, string) {
+// emailObject is the message as the app builds it in lib/mail.js send(),
+// from the mailbox the request works in.
+func emailObject(from *mailAccount, m *outgoing, drafts string) (map[string]any, string) {
 	to, bad := parseAddresses(m.To)
 	if bad != "" {
 		return nil, bad
@@ -544,7 +577,7 @@ func (s *Server) emailObject(u *User, m *outgoing, drafts string) (map[string]an
 	e := map[string]any{
 		"mailboxIds": map[string]bool{drafts: true},
 		"keywords":   map[string]bool{"$draft": true, "$seen": true},
-		"from":       []jmapAddress{{u.Name, u.Email}},
+		"from":       []jmapAddress{{from.Name, from.Email}},
 		"to":         to, "cc": cc, "bcc": bcc,
 		"subject":    m.Subject,
 		"bodyValues": map[string]any{"t": map[string]string{"value": text}},
@@ -578,6 +611,15 @@ func (s *Server) sendEmail(w http.ResponseWriter, r *http.Request, u *User, m *o
 		fail(w, 400, "Say who the message is for.")
 		return "", "", false
 	}
+	acct, code, msg := s.mailAccount(r, u)
+	if code != 0 {
+		fail(w, code, msg)
+		return "", "", false
+	}
+	if !acct.maySend() {
+		fail(w, 403, viewerRefused)
+		return "", "", false
+	}
 	if !s.lim.allow("send:"+u.ID, mailSendsPerHour, time.Hour) {
 		w.Header().Set("Retry-After", "3600")
 		fail(w, 429, "That's a lot of mail in one hour. Try again later.")
@@ -591,27 +633,23 @@ func (s *Server) sendEmail(w http.ResponseWriter, r *http.Request, u *User, m *o
 		return "", "", false
 	}
 	drafts, sent := mailboxRole(boxes, "drafts"), mailboxRole(boxes, "sent")
-	identity := s.identityOf(w, r, u)
+	identity := s.identityOf(w, r, u, acct)
 	if identity == "" {
 		return "", "", false
 	}
-	email, bad := s.emailObject(u, m, drafts)
+	email, bad := emailObject(acct, m, drafts)
 	if bad != "" {
 		fail(w, 400, bad)
 		return "", "", false
 	}
-	calls := []jmapCall{
-		{"Email/set", map[string]any{"create": map[string]any{"m": email}}},
-		{"EmailSubmission/set", map[string]any{
+	// mailCall applies the plan's rule on recipients, as for the app.
+	res := s.mailCall(w, r, u,
+		jmapCall{"Email/set", map[string]any{"create": map[string]any{"m": email}}},
+		jmapCall{"EmailSubmission/set", map[string]any{
 			"create":               map[string]any{"s": map[string]any{"identityId": identity, "emailId": "#m"}},
 			"onSuccessUpdateEmail": map[string]any{"#s": map[string]any{"mailboxIds/" + drafts: nil, "mailboxIds/" + sent: true, "keywords/$draft": nil}},
 		}},
-	}
-	if !s.recipientsAllowed(u, rawCalls(calls)) {
-		fail(w, 403, "Your organisation's plan sends mail only to addresses on Open Suite.")
-		return "", "", false
-	}
-	res := s.mailCall(w, r, u, calls...)
+	)
 	if res == nil {
 		return "", "", false
 	}
@@ -644,7 +682,10 @@ func rawCalls(calls []jmapCall) [][]json.RawMessage {
 	return out
 }
 
-func (s *Server) identityOf(w http.ResponseWriter, r *http.Request, u *User) string {
+// identityOf finds the sending identity for the mailbox's own address. A
+// member's own mailbox also lists their groups' addresses; those are sent
+// from the group's mailbox instead, so the copy lands in its Sent.
+func (s *Server) identityOf(w http.ResponseWriter, r *http.Request, u *User, acct *mailAccount) string {
 	res := s.mailCall(w, r, u, jmapCall{"Identity/get", map[string]any{}})
 	if res == nil {
 		return ""
@@ -654,12 +695,9 @@ func (s *Server) identityOf(w http.ResponseWriter, r *http.Request, u *User) str
 	}
 	json.Unmarshal(res[0].Args, &g)
 	for _, i := range g.List {
-		if strings.EqualFold(i.Email, u.Email) {
+		if strings.EqualFold(i.Email, acct.Email) {
 			return i.ID
 		}
-	}
-	if len(g.List) > 0 {
-		return g.List[0].ID
 	}
 	fail(w, 503, "The mailbox has no sending identity yet. Try again in a minute.")
 	return ""
@@ -738,6 +776,11 @@ func (s *Server) handleReply(w http.ResponseWriter, r *http.Request, u *User) {
 		fail(w, 400, "bad request")
 		return
 	}
+	acct, code, msg := s.mailAccount(r, u)
+	if code != 0 {
+		fail(w, code, msg)
+		return
+	}
 	e := s.oneEmail(w, r, u, r.PathValue("id"))
 	if e == nil {
 		return
@@ -749,7 +792,7 @@ func (s *Server) handleReply(w http.ResponseWriter, r *http.Request, u *User) {
 	m := &outgoing{To: addrStrings(to), Subject: prefixed("Re", e.Subject), Attachments: in.Attachments}
 	if in.All {
 		for _, a := range append(append([]jmapAddress{}, e.To...), e.Cc...) {
-			mine := strings.EqualFold(a.Email, u.Email)
+			mine := strings.EqualFold(a.Email, acct.Email)
 			for _, t := range to {
 				mine = mine || strings.EqualFold(t.Email, a.Email)
 			}
@@ -763,9 +806,16 @@ func (s *Server) handleReply(w http.ResponseWriter, r *http.Request, u *User) {
 	m.HTML = asHTML(in.Text, in.HTML) + qh
 	m.inReplyTo = e.MessageID
 	m.references = append(append([]string{}, e.References...), e.MessageID...)
-	if id, thread, done := s.sendEmail(w, r, u, m); done {
-		sentResult(w, id, thread)
+	id, thread, done := s.sendEmail(w, r, u, m)
+	if !done {
+		return
 	}
+	if acct.Group != "" {
+		// The group sees who answered, as it does for replies from the app.
+		s.mailCall(&recorder{header: http.Header{}}, r, u, jmapCall{"Email/set", map[string]any{"update": map[string]any{e.ID: map[string]any{
+			"keywords/$answered": true, "keywords/" + replyMark(u.ID): true}}}})
+	}
+	sentResult(w, id, thread)
 }
 
 func (s *Server) handleForward(w http.ResponseWriter, r *http.Request, u *User) {
@@ -816,6 +866,9 @@ func (s *Server) handleMessageUpdate(w http.ResponseWriter, r *http.Request, u *
 	}
 	if in.Unread != nil {
 		patch["keywords/$seen"] = keyword(!*in.Unread)
+		if acct, _, _ := s.mailAccount(r, u); acct != nil && acct.Group != "" && !*in.Unread {
+			patch["keywords/"+readMark(u.ID)] = true
+		}
 	}
 	if in.Flagged != nil {
 		patch["keywords/$flagged"] = keyword(*in.Flagged)
@@ -871,6 +924,11 @@ func (s *Server) handleMessageDelete(w http.ResponseWriter, r *http.Request, u *
 // --- drafts -----------------------------------------------------------------
 
 func (s *Server) saveDraft(w http.ResponseWriter, r *http.Request, u *User, m *outgoing, replace string) {
+	acct, code, msg := s.mailAccount(r, u)
+	if code != 0 {
+		fail(w, code, msg)
+		return
+	}
 	if !s.resolveAttachments(w, r, u, m) {
 		return
 	}
@@ -878,7 +936,7 @@ func (s *Server) saveDraft(w http.ResponseWriter, r *http.Request, u *User, m *o
 	if boxes == nil {
 		return
 	}
-	email, bad := s.emailObject(u, m, mailboxRole(boxes, "drafts"))
+	email, bad := emailObject(acct, m, mailboxRole(boxes, "drafts"))
 	if bad != "" {
 		fail(w, 400, bad)
 		return
@@ -980,7 +1038,7 @@ func (s *Server) handleAttachmentV1(w http.ResponseWriter, r *http.Request, u *U
 	name := cleanName(r.URL.Query().Get("name"))
 	r.SetPathValue("blob", r.PathValue("blobId"))
 	r.SetPathValue("name", name)
-	r.URL.RawQuery = url.Values{"dl": {"1"}}.Encode()
+	r.URL.RawQuery = url.Values{"dl": {"1"}, "group": {r.URL.Query().Get("group")}}.Encode()
 	s.handleMailBlob(w, r, u)
 }
 

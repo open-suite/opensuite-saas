@@ -20,19 +20,22 @@ import (
 // jmapGroupware lists the calendar and contact methods a browser may call.
 var jmapGroupware = []string{"Calendar/", "CalendarEvent/", "AddressBook/", "ContactCard/"}
 
-// groupwareCallOK vets one calendar or contact call before it is forwarded.
-// Sharing with another account is refused, since the engine's accounts span
-// every organisation on the server. Invitations are written and sent by the
-// suite itself, so the engine is never asked to send its own.
+// groupwareCallOK vets one calendar, contact or mail folder call before it is
+// forwarded. Sharing with another account is refused, since the engine's
+// accounts span every organisation on the server (a group's folders are
+// shared by the suite itself, groups.go). Invitations are written and sent
+// by the suite itself, so the engine is never asked to send its own.
 func groupwareCallOK(name string, args map[string]json.RawMessage) bool {
-	mine := false
+	mine := strings.HasPrefix(name, "Mailbox/")
 	for _, p := range jmapGroupware {
-		mine = mine || strings.HasPrefix(name, p)
+		if strings.HasPrefix(name, p) {
+			mine = true
+			delete(args, "sendSchedulingMessages")
+		}
 	}
 	if !mine {
 		return true
 	}
-	delete(args, "sendSchedulingMessages")
 	for _, op := range []string{"create", "update"} {
 		raw, has := args[op]
 		if !has {

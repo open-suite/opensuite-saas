@@ -6,6 +6,8 @@ import { get, post, patch, del, refreshBoot } from '../lib/api.js'
 import { cx, when, bytes, copyText } from '../lib/util.js'
 import { Avatar, Button, Empty, Field, IconButton, Menu, Modal } from '../ui.jsx'
 import { Connect } from './account.jsx'
+import { GroupsAdmin } from './groups.jsx'
+import { groups } from '../lib/groups.js'
 
 const roleName = { owner: 'Owner', admin: 'Administrator', member: 'Member' }
 
@@ -64,7 +66,7 @@ function AddPerson({ domains, agent, onClose, onCreated }) {
         <Field label="Role">
           <select class="select" value={f.role} onChange={set('role')}>
             <option value="member">Member</option>
-            <option value="admin">Administrator: can manage people and domains</option>
+            <option value="admin">Administrator: can manage people, groups and domains</option>
           </select>
         </Field>
       </form>
@@ -267,6 +269,7 @@ function Organisation({ data }) {
       <div class="card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div class="row"><h2 class="grow">Plan</h2><span class="badge badge-accent">{lim?.label || '…'}</span></div>
         <div class="row"><span class="grow">People</span><b>{(data?.people || people.value).length} / {lim?.maxUsers ?? '…'}</b></div>
+        <div class="row"><span class="grow">Groups</span><b>{groups.value.length} / {lim?.maxGroups ?? '…'}</b></div>
         <div class="row"><span class="grow">Custom domains</span><b>{data?.domains?.length ?? 0} / {lim?.domains ?? '…'}</b></div>
         <div class="row"><span class="grow">Mail to other providers</span><b>{lim ? (lim.mailOutside ? 'Yes' : 'No, Open Suite addresses only') : '…'}</b></div>
         <div class="row"><span class="grow">Storage <span class="muted">· files {bytes(data?.usage?.files || 0)}, documents {bytes(Math.max(0, used - (data?.usage?.files || 0)))}</span></span><b>{bytes(used)} / {lim?.storageGB ?? '…'} GB</b></div>
@@ -333,13 +336,14 @@ export function Admin() {
     refreshBoot()
   }
   useEffect(reload, [])
-  const tabs = [['people', 'People'], ['domains', 'Domains'], ['organisation', 'Organisation'], user.value.operator && ['operator', 'All organisations']].filter(Boolean)
+  const tabs = [['people', 'People'], ['groups', 'Groups'], ['domains', 'Domains'], ['organisation', 'Organisation'], user.value.operator && ['operator', 'All organisations']].filter(Boolean)
   return (
     <div class="page">
       <div class="page-inner">
         <div class="page-head"><h1>Admin</h1></div>
         <div class="tabs">{tabs.map(([k, label]) => <a key={k} href={'/admin/' + k} class={cx('tab', tab === k && 'on')}>{label}</a>)}</div>
         {tab === 'people' && <People data={data} reload={reload} />}
+        {tab === 'groups' && <GroupsAdmin data={data} />}
         {tab === 'domains' && <Domains data={data} setData={setData} />}
         {tab === 'organisation' && <Organisation data={data} />}
         {tab === 'operator' && user.value.operator && <Operator />}

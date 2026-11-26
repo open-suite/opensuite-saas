@@ -57,7 +57,7 @@ var pageParams = []apiParam{
 
 func (s *Server) apiOps() []*apiOp {
 	var all []*apiOp
-	for _, group := range [][]*apiOp{s.accountOps(), s.adminOps(), s.mailOps(), s.calendarOps(), s.contactOps(), s.chatOps(), s.meetOps(), s.fileOps(), s.docOps(), s.contentOps(), s.searchOps()} {
+	for _, group := range [][]*apiOp{s.accountOps(), s.groupOps(), s.adminOps(), s.mailOps(), s.calendarOps(), s.contactOps(), s.chatOps(), s.meetOps(), s.fileOps(), s.docOps(), s.contentOps(), s.searchOps()} {
 		all = append(all, group...)
 	}
 	return all

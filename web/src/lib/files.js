@@ -8,6 +8,7 @@ import { api, get, post, patch, del, ApiError, refreshBoot } from './api.js'
 import { kvGet, kvSet } from './idb.js'
 import { newId, debounce, bytes } from './util.js'
 import { docPath, renameDoc, shareDoc, trashDoc, deleteDoc, moveDoc } from './docs.js'
+import { groupQuery } from './mail.js'
 
 export const nodes = signal([]) // every folder and file this person can reach
 export const filesLoaded = signal(false) // the device copy or the server's answer is in
@@ -357,17 +358,18 @@ export async function uploadDropped(dataTransfer, parent = '') {
 
 // --- mail -------------------------------------------------------------------
 
-// saveAttachment copies a mail attachment into the drive, server to server.
-export async function saveAttachment(att, parent = '') {
-  const node = await write(post('/api/files/from-mail', { id: newId(14), blobId: att.blobId, name: att.name || 'attachment', type: att.type, parent }))
+// saveAttachment copies a mail attachment into the drive, server to server,
+// from the person's own mailbox or a group's.
+export async function saveAttachment(att, group, parent = '') {
+  const node = await write(post('/api/files/from-mail' + groupQuery(group), { id: newId(14), blobId: att.blobId, name: att.name || 'attachment', type: att.type, parent }))
   upsertNode(node)
   if (storage.value) storage.value = { ...storage.value, usage: storage.value.usage + node.size }
   return node
 }
 
 // attachFile hands a file from the drive to the mail engine and returns what
-// the composer needs to attach it.
-export const attachFile = (node) => post('/api/files/' + node.id + '/to-mail', {}, { passive: true })
+// the composer needs to attach it, in the mailbox the message is sent from.
+export const attachFile = (node, group) => post('/api/files/' + node.id + '/to-mail' + groupQuery(group), {}, { passive: true })
 
 // --- choosing a file from another part of the suite -------------------------
 

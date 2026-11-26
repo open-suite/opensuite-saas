@@ -31,14 +31,17 @@ type Plan struct {
 	MaxUsers  int    `json:"maxUsers"`
 	StorageGB int    `json:"storageGB"`
 	Domains   int    `json:"domains"`
+	// MaxGroups bounds the shared mailboxes (groups.go). They hold mail like
+	// a person's mailbox, so they get the same allowance as people.
+	MaxGroups int `json:"maxGroups"`
 	// MailOutside lets people send to addresses not hosted here. Without it a
 	// throwaway sign-up cannot use the suite, or its sending reputation, for spam.
 	MailOutside bool `json:"mailOutside"`
 }
 
 var plans = map[string]Plan{
-	"free": {"Free", 5, 5, 1, false},
-	"team": {"Team", 250, 250, 10, true},
+	"free": {"Free", 5, 5, 1, 5, false},
+	"team": {"Team", 250, 250, 10, 250, true},
 }
 
 func planFor(name string) Plan {
@@ -142,9 +145,10 @@ func (s *Server) normalizeLogin(v string) string {
 	return v
 }
 
+// addressTaken: people and groups share one space of addresses.
 func (s *Server) addressTaken(email string) bool {
 	var n int
-	s.r.QueryRow(`SELECT count(*) FROM users WHERE email = ?`, email).Scan(&n)
+	s.r.QueryRow(`SELECT (SELECT count(*) FROM users WHERE email = ?1) + (SELECT count(*) FROM mail_groups WHERE email = ?1)`, email).Scan(&n)
 	return n > 0
 }
 
@@ -202,6 +206,10 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := in.Username + "@" + s.cfg.MailDomain
+	if s.addressTaken(email) {
+		fail(w, 409, "That address is taken.")
+		return
+	}
 	orgID, userID := newID(10), newID(12)
 	tx, err := s.w.Begin()
 	if err != nil {
@@ -332,6 +340,7 @@ func (s *Server) boot(u *User) map[string]any {
 	}
 	base["org"] = map[string]any{"id": u.OrgID, "name": orgName, "plan": plan, "limits": planFor(plan)}
 	base["people"] = s.people(u.OrgID)
+	base["groups"] = s.orgGroups(u.OrgID, u)
 	base["docs"] = s.docList(u)
 	base["meetings"] = s.meetList(u)
 	base["chat"] = map[string]any{

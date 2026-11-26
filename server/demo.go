@@ -79,6 +79,10 @@ type demoSeed struct {
 		HoursAgo                                  int64
 	}
 	Meetings []struct{ Key, Title, Owner string }
+	Groups   []struct {
+		Key, Login, Name, Description, Posting string
+		Members                                [][2]string // person, role
+	}
 	Mail     []seedMail
 	Events   []seedEvent
 	Contacts []seedContact
@@ -89,10 +93,12 @@ type demoSeed struct {
 	}
 }
 
-// A message: From and To are people's keys or "Name <address>".
+// A message: From and To are people's or groups' keys, or "Name <address>".
+// In a group's mailbox, ReadBy and RepliedBy are the members who left their
+// marks on it (readMark, replyMark).
 type seedMail struct {
 	Key, ReplyTo, From, Subject, Body string
-	To                                []string
+	To, ReadBy, RepliedBy             []string
 	Day                               int    // days before the reset
 	Time                              string // local "15:04"
 	Unread                            bool
@@ -239,8 +245,17 @@ func (s *Server) resetDemo(ctx context.Context) error {
 		return err
 	}
 	if s.cfg.MailURL != "" {
+		groups, err := s.demoGroups(ctx, seed, people)
+		if err != nil {
+			return err
+		}
 		for _, p := range seed.People {
-			if err := s.demoGroupware(ctx, seed, people, p.Key, rooms, at); err != nil {
+			if err := s.demoGroupware(ctx, seed, people, groups, p.Key, rooms, at); err != nil {
+				return err
+			}
+		}
+		for _, g := range seed.Groups {
+			if err := s.demoGroupMail(ctx, seed, people, groups, g.Key, at); err != nil {
 				return err
 			}
 		}
@@ -484,10 +499,90 @@ func demoPersonalise(state []byte, people map[string]*User, at time.Time) ([]byt
 
 // --- mail, calendar and contacts -------------------------------------------
 
+// demoGroups replaces the organisation's groups with the seed's. A group's
+// mailbox goes with it, so the seed's groups start empty, with only the
+// seed's members.
+func (s *Server) demoGroups(ctx context.Context, seed *demoSeed, people map[string]*User) (map[string]*Group, error) {
+	org := s.demo.org
+	for _, g := range s.orgGroups(org, nil) {
+		if err := s.groupDeleteMail(ctx, &g); err != nil {
+			return nil, err
+		}
+		if _, err := s.w.Exec(`DELETE FROM mail_groups WHERE id = ? AND org_id = ?`, g.ID, org); err != nil {
+			return nil, err
+		}
+	}
+	groups := map[string]*Group{}
+	for _, sg := range seed.Groups {
+		email := sg.Login + "@" + s.cfg.MailDomain
+		if s.addressTaken(email) {
+			return nil, errf("%s belongs to another organisation", email)
+		}
+		mailID, err := s.groupCreateMail(ctx, sg.Login, s.cfg.MailDomain, sg.Name)
+		if err != nil {
+			return nil, err
+		}
+		g := &Group{ID: newID(12), orgID: org, Email: email, Name: sg.Name, Description: sg.Description, Posting: sg.Posting, mailID: mailID}
+		if _, err := s.w.Exec(`INSERT INTO mail_groups(id, org_id, email, name, description, posting, mail_id, created) VALUES(?,?,?,?,?,?,?,?)`,
+			g.ID, org, g.Email, g.Name, g.Description, g.Posting, g.mailID, now()); err != nil {
+			return nil, err
+		}
+		for _, m := range sg.Members {
+			u := people[m[0]]
+			if err := s.groupAccess(ctx, g, u, m[1]); err != nil {
+				return nil, err
+			}
+			if _, err := s.w.Exec(`INSERT INTO mail_group_members(group_id, user_id, role) VALUES(?,?,?)`, g.ID, u.ID, m[1]); err != nil {
+				return nil, err
+			}
+			g.Members = append(g.Members, GroupMember{u.ID, m[1]})
+		}
+		if g.Posting != "anyone" {
+			if err := s.groupPolicy(ctx, g); err != nil {
+				return nil, err
+			}
+		}
+		groups[sg.Key] = g
+	}
+	return groups, nil
+}
+
+// demoGroupMail fills a group's mailbox from the seed, through the account of
+// a member who may write in it.
+func (s *Server) demoGroupMail(ctx context.Context, seed *demoSeed, people map[string]*User, groups map[string]*Group, key string, at time.Time) error {
+	g := groups[key]
+	var u *User
+	for _, p := range seed.People {
+		if r := g.roleOf(people[p.Key].ID); u == nil && (r == "user" || r == "admin") {
+			u = people[p.Key]
+		}
+	}
+	if u == nil {
+		return errf("demo: the group %s has nobody who may write in it", g.Email)
+	}
+	res, err := s.jmapAs(ctx, u, jmapUsing, jmapCall{"Mailbox/get", map[string]any{"accountId": g.mailID, "properties": []string{"role"}}})
+	if err != nil {
+		return err
+	}
+	var boxes struct {
+		List []struct{ ID, Role string } `json:"list"`
+	}
+	json.Unmarshal(res[0].Args, &boxes)
+	role := map[string]string{}
+	for _, b := range boxes.List {
+		role[b.Role] = b.ID
+	}
+	loc, err := time.LoadLocation(seed.Zone)
+	if err != nil {
+		return err
+	}
+	return s.demoMail(ctx, seed, people, groups, key, u, g.mailID, role, loc, at)
+}
+
 // demoGroupware empties one person's mailbox, calendars and address books in
 // the mail engine and fills them from the seed. It works through that
 // person's own account only.
-func (s *Server) demoGroupware(ctx context.Context, seed *demoSeed, people map[string]*User, key string, rooms map[string]string, at time.Time) error {
+func (s *Server) demoGroupware(ctx context.Context, seed *demoSeed, people map[string]*User, groups map[string]*Group, key string, rooms map[string]string, at time.Time) error {
 	u := people[key]
 	call := func(calls ...jmapCall) ([]jmapResult, error) { return s.jmapAs(ctx, u, jmapUsing, calls...) }
 	type list struct {
@@ -586,7 +681,7 @@ func (s *Server) demoGroupware(ctx context.Context, seed *demoSeed, people map[s
 	if err != nil {
 		return err
 	}
-	if err := s.demoMail(ctx, seed, people, key, role, loc, at); err != nil {
+	if err := s.demoMail(ctx, seed, people, groups, key, u, u.MailID, role, loc, at); err != nil {
 		return err
 	}
 	create := map[string]any{}
@@ -705,13 +800,16 @@ func cardJSON(c seedContact, book string) map[string]any {
 	return card
 }
 
-// demoMail imports the seed's messages into one person's mailbox: what they
-// sent into Sent, what they received into the Inbox. Imported, never sent.
-func (s *Server) demoMail(ctx context.Context, seed *demoSeed, people map[string]*User, key string, role map[string]string, loc *time.Location, at time.Time) error {
-	u := people[key]
+// demoMail imports the seed's messages into one mailbox, the person's or the
+// group's named by key, through the account of u: what it sent into Sent,
+// what it received into the Inbox. Imported, never sent.
+func (s *Server) demoMail(ctx context.Context, seed *demoSeed, people map[string]*User, groups map[string]*Group, key string, u *User, account string, role map[string]string, loc *time.Location, at time.Time) error {
 	addr := func(v string) (*mail.Address, error) {
 		if p := people[v]; p != nil {
 			return &mail.Address{Name: p.Name, Address: p.Email}, nil
+		}
+		if g := groups[v]; g != nil {
+			return &mail.Address{Name: g.Name, Address: g.Email}, nil
 		}
 		return mail.ParseAddress(v)
 	}
@@ -764,7 +862,7 @@ func (s *Server) demoMail(ctx context.Context, seed *demoSeed, people map[string
 		head("Content-Type", "text/plain; charset=utf-8")
 		head("Content-Transfer-Encoding", "8bit")
 		raw.WriteString("\r\n" + strings.ReplaceAll(m.Body, "\n", "\r\n") + "\r\n")
-		blob, err := s.mailUpload(ctx, u, raw.Bytes())
+		blob, err := s.mailUpload(ctx, u, account, raw.Bytes())
 		if err != nil {
 			return err
 		}
@@ -772,12 +870,18 @@ func (s *Server) demoMail(ctx context.Context, seed *demoSeed, people map[string
 		if seen {
 			keywords["$seen"] = true
 		}
+		for _, p := range m.ReadBy {
+			keywords[readMark(people[p].ID)] = true
+		}
+		for _, p := range m.RepliedBy {
+			keywords["$answered"], keywords[replyMark(people[p].ID)] = true, true
+		}
 		imports[itoa(i+1)] = map[string]any{"blobId": blob, "mailboxIds": map[string]bool{box: true}, "keywords": keywords, "receivedAt": sent.UTC().Format(time.RFC3339)}
 	}
 	if len(imports) == 0 {
 		return nil
 	}
-	res, err := s.jmapAs(ctx, u, jmapUsing, jmapCall{"Email/import", map[string]any{"accountId": u.MailID, "emails": imports}})
+	res, err := s.jmapAs(ctx, u, jmapUsing, jmapCall{"Email/import", map[string]any{"accountId": account, "emails": imports}})
 	if err != nil {
 		return err
 	}
@@ -786,14 +890,15 @@ func (s *Server) demoMail(ctx context.Context, seed *demoSeed, people map[string
 	}
 	json.Unmarshal(res[0].Args, &r)
 	if len(r.NotCreated) > 0 {
-		return errf("demo: mail for %s refused: %s", u.Email, res[0].Args)
+		return errf("demo: mail for %s refused: %s", key, res[0].Args)
 	}
 	return nil
 }
 
-// mailUpload stores a raw message in a person's account for Email/import.
-func (s *Server) mailUpload(ctx context.Context, u *User, body []byte) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", s.cfg.MailURL+"/jmap/upload/"+url.PathEscape(u.MailID)+"/", bytes.NewReader(body))
+// mailUpload stores a raw message in a mailbox u may write in, for
+// Email/import.
+func (s *Server) mailUpload(ctx context.Context, u *User, account string, body []byte) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "POST", s.cfg.MailURL+"/jmap/upload/"+url.PathEscape(account)+"/", bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
