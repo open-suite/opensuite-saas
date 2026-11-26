@@ -7,11 +7,13 @@ import { boot, user, people, toast } from './store.js'
 import { api, post } from './api.js'
 import { navigate } from './router.js'
 import { kvGet, kvSet } from './idb.js'
-import { debounce, newId, escapeHtml } from './util.js'
+import { debounce, newId } from './util.js'
 import { boxByRole, ensureMailbox, identity, onPush } from './mail.js'
-import { DAY, MIN, localZone, parseWall, formatWall, wallIn, instantOf, parseDuration, formatDuration, span, startOfDay, zoneLabel } from './time.js'
-import { expandRule, applyPatch, describeRule } from './rrule.js'
-import { toICS, buildMail, addressOf } from './ics.js'
+import { DAY, MIN, localZone, parseWall, formatWall, wallIn, parseDuration, formatDuration, span, startOfDay } from './time.js'
+import { expandEvents } from './occurrences.js'
+import { partOf, organizes, meetingLink, placeOf, answered, reanswered, guestMails, replyMails, deleteMails } from './invite.js'
+
+export { guestsOf, organizerOf, meetingLink, notesOf, placeOf, repeatText } from './invite.js'
 
 export const calendars = signal([]) // [{ id, name, color, isVisible, isDefault, sortOrder }]
 export const events = signal({}) // id -> event (a repeating event is one entry)
@@ -176,53 +178,21 @@ export async function deleteCalendar(cal) {
 
 // --- people in an event ---------------------------------------------------
 
-export const myAddress = () => (user.value?.email || '').toLowerCase()
-export const guestsOf = (ev) => Object.entries(ev.participants || {}).map(([key, p]) => ({ key, name: p.name || '', email: addressOf(p), status: p.participationStatus || 'needs-action', owner: !!p.roles?.owner }))
-export const myPart = (ev) => guestsOf(ev).find((g) => g.email === myAddress())
-// An event with no guests is simply mine; with guests, the one who wrote it
-// organises and everyone else answers.
-export function isOrganizer(ev) {
-  if (!ev.participants || !Object.keys(ev.participants).length) return true
-  const org = (ev.organizerCalendarAddress || '').replace(/^mailto:/i, '').toLowerCase()
-  return org ? org === myAddress() : !!myPart(ev)?.owner
-}
-export const organizerOf = (ev) => guestsOf(ev).find((g) => g.owner) || { email: (ev.organizerCalendarAddress || '').replace(/^mailto:/i, ''), name: '' }
-// An invitation written elsewhere may carry its meeting link only as text;
-// links of the well-known kinds are recognised so the event still gets a
-// Join button.
-const MEETING = /https?:\/\/[^\s<>"]*(?:\/meet\/[a-z]{3}-[a-z]{4}-[a-z]{3}\b|meet\.google\.com\/|zoom\.us\/j\/|teams\.microsoft\.com\/l\/meetup-join|teams\.live\.com\/meet\/|whereby\.com\/|meet\.jit\.si\/)[^\s<>"]*/i
-export const meetingLink = (ev) => Object.values(ev.virtualLocations || {})[0]?.uri || ((Object.values(ev.locations || {})[0]?.name || '') + '\n' + (ev.description || '')).match(MEETING)?.[0] || ''
-// The description without the "Join:" line that invitations carry for
-// calendars which show nothing else.
-export const notesOf = (ev) => (ev.description || '').replace(/\n*Join: https?:\/\/\S+\s*$/, '').trim()
+// The signed-in person, as invite.js needs them.
+const me = () => ({ name: user.value?.name || '', email: user.value?.email || '' })
+export const myAddress = () => me().email.toLowerCase()
+export const myPart = (ev) => partOf(ev, me())
+export const isOrganizer = (ev) => organizes(ev, me())
 // joinMeeting opens a meeting link: one of ours in place, any other in a tab.
 export function joinMeeting(link) {
   const here = location.origin + '/meet/'
   if (link.startsWith(here)) navigate('/meet/' + link.slice(here.length))
   else window.open(link, '_blank', 'noopener')
 }
-export function placeOf(ev) {
-  const name = Object.values(ev.locations || {})[0]?.name || ''
-  return /^https?:\/\/\S+$/.test(name) ? '' : name // a bare link is a meeting, not a place
-}
 
 // --- occurrences ----------------------------------------------------------
 
 const cache = new Map()
-
-function instance(ev, inst, rid, out, from, to) {
-  if (inst.status === 'cancelled') return
-  const allDay = !!inst.showWithoutTime
-  const tz = allDay ? localZone : inst.timeZone || localZone
-  const wall = parseWall(inst.start)
-  if (Number.isNaN(wall)) return
-  const dur = parseDuration(inst.duration) || (allDay ? DAY : 0)
-  const start = instantOf(wall, tz)
-  const end = allDay ? instantOf(wall + dur, tz) : start + dur
-  if (end < from || start >= to || (end === from && dur > 0)) return
-  const cal = calendarOf(inst)
-  out.push({ key: ev.id + '|' + (rid || ''), id: ev.id, rid, ev, inst, start, end, allDay, title: inst.title || '(no title)', calId: cal?.id, color: inst.color || colorOf(cal) })
-}
 
 // occurrences lists everything that happens between two instants, repeating
 // events unrolled, in the viewer's own time.
@@ -230,24 +200,10 @@ export function occurrences(from, to) {
   const key = from + ':' + to
   let out = cache.get(key)
   if (out) return out
-  out = []
-  for (const ev of Object.values(events.value)) {
-    if (!ev.recurrenceRule) {
-      instance(ev, ev, null, out, from, to)
-      continue
-    }
-    const tz = ev.showWithoutTime ? localZone : ev.timeZone || localZone
-    const dur = parseDuration(ev.duration) || 0
-    const walls = expandRule(parseWall(ev.start), ev.recurrenceRule, wallIn(from, tz) - dur - 2 * DAY, wallIn(to, tz) + 2 * DAY)
-    for (const w of walls) {
-      const rid = formatWall(w)
-      const ov = ev.recurrenceOverrides?.[rid]
-      if (ov?.excluded) continue
-      const inst = ov ? applyPatch({ ...ev, start: rid }, ov) : { ...ev, start: rid }
-      instance(ev, inst, rid, out, from, to)
-    }
-  }
-  out.sort((a, b) => a.start - b.start || b.end - a.end || a.title.localeCompare(b.title))
+  out = expandEvents(Object.values(events.value), from, to, localZone).map((o) => {
+    const cal = calendarOf(o.inst)
+    return { ...o, calId: cal?.id, color: o.inst.color || colorOf(cal) }
+  })
   if (cache.size > 24) cache.clear()
   cache.set(key, out)
   return out
@@ -257,8 +213,6 @@ export const visible = (list) => {
   const hidden = new Set(calendars.value.filter((c) => c.isVisible === false).map((c) => c.id))
   return hidden.size ? list.filter((o) => !hidden.has(o.calId)) : list
 }
-
-export const repeatText = (ev) => describeRule(ev.recurrenceRule, parseWall(ev.start))
 
 // --- writing --------------------------------------------------------------
 
@@ -331,11 +285,7 @@ export function saveEvent(ev, prev) {
     return local
   }
   if (alias.has(ev.id)) ev = { ...ev, id: real(ev.id) }
-  // A new time needs new answers from the guests.
-  const timing = (e) => JSON.stringify([e.start, e.duration, e.timeZone, e.showWithoutTime, e.recurrenceRule])
-  if (ev.participants && isOrganizer(ev) && timing(ev) !== timing(prev)) {
-    ev = { ...ev, participants: Object.fromEntries(Object.entries(ev.participants).map(([k, p]) => [k, addressOf(p) === myAddress() ? p : { ...p, participationStatus: 'needs-action', expectReply: true }])) }
-  }
+  ev = reanswered(ev, prev, me())
   const patch = diff(prev, ev)
   if (!Object.keys(patch).length) return ev
   put(ev)
@@ -374,8 +324,12 @@ export function deleteOccurrence(occ, scope = 'all') {
   queue(ev.id, async () => {
     const id = real(ev.id)
     // Guests hear that it is off; an organiser hears that I am not coming.
-    if (isOrganizer(ev)) await notifyGuests(null, ev)
-    else if (myPart(ev) && myPart(ev).status !== 'declined') await sendReply(ev, 'declined').catch(() => {})
+    // Either way the event goes, and only the organiser hears of a failure.
+    try {
+      await deliver(deleteMails(ev, me(), localZone))
+    } catch (e) {
+      if (isOrganizer(ev)) unsent(e)
+    }
     await jm([['CalendarEvent/set', { destroy: [id] }]])
   }).catch((e) => failed(e, () => put(ev)))
 }
@@ -384,13 +338,13 @@ export function deleteOccurrence(occ, scope = 'all') {
 export function rsvp(ev, status) {
   const mine = myPart(ev)
   if (!mine) return
-  const next = { ...ev, participants: { ...ev.participants, [mine.key]: { ...ev.participants[mine.key], participationStatus: status } } }
+  const next = answered(ev, status, me())
   put(next)
   queue(ev.id, async () => {
     const id = real(ev.id)
     const [r] = await jm([['CalendarEvent/set', { update: { [id]: { [`participants/${mine.key}/participationStatus`]: status } } }]])
     if (r.notUpdated?.[id]) throw new Error(r.notUpdated[id].description || "Your answer couldn't be saved.")
-    await sendReply(next, status)
+    await deliver(replyMails(next, status, me(), localZone))
   }).catch((e) => failed(e, () => put(ev)))
 }
 
@@ -413,46 +367,14 @@ export async function importInvitation(blobId) {
 export const findByUid = (uid) => Object.values(events.value).find((e) => e.uid === uid)
 
 // --- invitations by mail ----------------------------------------------------
+// The mails themselves are written by invite.js; this sends them.
 
-const statusWord = { accepted: 'Accepted', declined: 'Declined', tentative: 'Maybe' }
-
-function whenText(ev) {
-  const allDay = !!ev.showWithoutTime
-  const tz = allDay ? localZone : ev.timeZone || localZone
-  const wall = parseWall(ev.start)
-  const dur = parseDuration(ev.duration) || (allDay ? DAY : 0)
-  const start = instantOf(wall, tz)
-  let text = span(start, allDay ? instantOf(wall + dur, tz) : start + dur, allDay)
-  if (!allDay) text += ` (${zoneLabel(tz)})`
-  const repeat = repeatText(ev)
-  return repeat ? `${text}. ${repeat}` : text
+async function deliver(mails) {
+  for (const m of mails) await submit(m)
 }
 
-function mailBody(ev, lead) {
-  const rows = [['When', whenText(ev)]]
-  if (placeOf(ev)) rows.push(['Where', placeOf(ev)])
-  const link = meetingLink(ev)
-  if (link) rows.push(['Join', link])
-  const guests = guestsOf(ev).map((g) => g.name || g.email).join(', ')
-  if (guests) rows.push(['Guests', guests])
-  const title = ev.title || '(no title)'
-  const text = [lead, '', title, ...rows.map(([k, v]) => `${k}: ${v}`), ev.description ? '\n' + ev.description : ''].join('\n')
-  const cell = (v) => (/^https?:\/\//.test(v) ? `<a href="${escapeHtml(v)}" style="color:#1269e8">${escapeHtml(v)}</a>` : escapeHtml(v))
-  const html = `<div style="font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#102033;max-width:560px">
-<p style="margin:0 0 14px;color:#617385">${escapeHtml(lead)}</p>
-<div style="border:1px solid #e2e8ef;border-radius:12px;padding:18px 20px">
-<div style="font-size:18px;font-weight:650;margin-bottom:10px">${escapeHtml(title)}</div>
-<table style="border-collapse:collapse;font-size:14px">${rows.map(([k, v]) => `<tr><td style="padding:3px 14px 3px 0;color:#617385;vertical-align:top;white-space:nowrap">${k}</td><td style="padding:3px 0">${cell(v)}</td></tr>`).join('')}</table>
-${ev.description ? `<p style="margin:12px 0 0;white-space:pre-wrap">${escapeHtml(ev.description)}</p>` : ''}
-</div></div>`
-  return { text, html }
-}
-
-async function sendCalendarMail({ to, subject, lead, ev, method, only }) {
-  if (!to.length) return
-  const me = { name: user.value.name, email: user.value.email }
-  const { text, html } = mailBody(ev, lead)
-  const raw = buildMail({ from: me, to, subject, text, html, method, ics: toICS(ev, { method, only }) })
+async function submit({ to, raw }) {
+  const from = me()
   const up = await api('POST', '/api/mail/upload', new Blob([raw]), { type: 'message/rfc822', passive: true })
   const sent = boxByRole('sent')?.id || (await ensureMailbox('sent', 'Sent'))
   let idn = identity.value?.id
@@ -463,7 +385,7 @@ async function sendCalendarMail({ to, subject, lead, ev, method, only }) {
     // The envelope names the recipients, so the server can check them
     // without reading the uploaded message.
     ['EmailSubmission/set', {
-      create: { s: { identityId: idn, emailId: '#m', envelope: { mailFrom: { email: me.email }, rcptTo: to.map((t) => ({ email: t.email })) } } },
+      create: { s: { identityId: idn, emailId: '#m', envelope: { mailFrom: { email: from.email }, rcptTo: to.map((t) => ({ email: t.email })) } } },
       onSuccessDestroyEmail: ['#s'],
     }],
   ])
@@ -471,43 +393,16 @@ async function sendCalendarMail({ to, subject, lead, ev, method, only }) {
   if (err) throw new Error(err.description || 'The invitation could not be sent.')
 }
 
-const others = (ev) => guestsOf(ev).filter((g) => g.email && g.email !== myAddress())
+const unsent = (e) => toast(e.message || 'The invitation could not be sent.', 'error')
 
 // notifyGuests mails whoever needs to hear about a change I made as the
-// organiser: new and existing guests get the event, removed guests (or all,
-// when the event is deleted) get a cancellation.
+// organiser. A mail that fails is reported; the change itself stands.
 async function notifyGuests(ev, prev) {
-  const mine = user.value.name
   try {
-    if (!ev) {
-      if (!isOrganizer(prev)) return
-      await sendCalendarMail({ to: others(prev), subject: 'Cancelled: ' + (prev.title || '(no title)'), lead: `${mine} cancelled this event.`, ev: prev, method: 'CANCEL' })
-      return
-    }
-    if (!isOrganizer(ev)) return
-    const now = others(ev)
-    const before = prev && isOrganizer(prev) ? others(prev) : []
-    const dropped = before.filter((g) => !now.find((n) => n.email === g.email))
-    if (dropped.length) await sendCalendarMail({ to: dropped, subject: 'Cancelled: ' + (prev.title || '(no title)'), lead: `${mine} removed you from this event.`, ev: prev, method: 'CANCEL' })
-    if (!now.length) return
-    // Only what guests can see is worth a new message.
-    const shown = (e) => JSON.stringify([e.title, e.start, e.duration, e.timeZone, e.showWithoutTime, e.recurrenceRule, e.recurrenceOverrides, e.locations, e.virtualLocations, e.description, others(e).map((g) => g.email)])
-    if (prev && before.length && shown(prev) === shown(ev)) return
-    const fresh = !prev || !before.length
-    await sendCalendarMail({ to: now, subject: (fresh ? 'Invitation: ' : 'Updated invitation: ') + (ev.title || '(no title)'), lead: fresh ? `${mine} invited you to an event.` : `${mine} changed this event.`, ev, method: 'REQUEST' })
+    await deliver(guestMails(ev, prev, me(), localZone))
   } catch (e) {
-    toast(e.message || 'The invitation could not be sent.', 'error')
+    unsent(e)
   }
-}
-
-async function sendReply(ev, status) {
-  const org = organizerOf(ev)
-  if (!org.email || org.email === myAddress()) return
-  await sendCalendarMail({
-    to: [org], subject: `${statusWord[status] || 'Answer'}: ${ev.title || '(no title)'}`,
-    lead: `${user.value.name} ${status === 'accepted' ? 'accepted' : status === 'declined' ? 'declined' : 'might attend'} this event.`,
-    ev, method: 'REPLY', only: myAddress(),
-  })
 }
 
 // --- free/busy --------------------------------------------------------------

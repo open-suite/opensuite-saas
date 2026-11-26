@@ -15,10 +15,16 @@ import (
 type User struct {
 	ID, OrgID, Email, Name, Role, Status string
 	MxLocal, MxToken, MailSecret, MailID string
-	MustChange, MailReady               bool
+	MustChange, MailReady                bool
+	// Kind is "person" or "agent". An agent is a member like any other, with a
+	// mailbox, calendar and files, but no password: it acts only through API
+	// tokens (tokens.go).
+	Kind string
 }
 
 func (u *User) isAdmin() bool { return u.Role == "owner" || u.Role == "admin" }
+
+func (u *User) isAgent() bool { return u.Kind == "agent" }
 
 type Plan struct {
 	Label     string `json:"label"`
@@ -50,11 +56,12 @@ var usernameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,30}[a-z0-9]$`)
 var reservedNames = []string{"admin", "administrator", "postmaster", "abuse", "root", "support", "noreply", "no-reply",
 	"hostmaster", "webmaster", "mailer-daemon", "security", "opensuite", "billing", "help", "info", "system"}
 
-const userCols = `u.id, u.org_id, u.email, u.name, u.role, u.status, u.mx_local, u.mx_token, u.mail_secret, u.must_change, u.mail_ready, u.mail_id`
+const userCols = `u.id, u.org_id, u.email, u.name, u.role, u.status, u.mx_local, u.mx_token, u.mail_secret, u.must_change, u.mail_ready, u.mail_id, u.kind`
 
-func scanUser(row interface{ Scan(...any) error }) (*User, error) {
+// scanUser reads userCols, then any extra columns selected after them.
+func scanUser(row interface{ Scan(...any) error }, extra ...any) (*User, error) {
 	u := &User{}
-	err := row.Scan(&u.ID, &u.OrgID, &u.Email, &u.Name, &u.Role, &u.Status, &u.MxLocal, &u.MxToken, &u.MailSecret, &u.MustChange, &u.MailReady, &u.MailID)
+	err := row.Scan(append([]any{&u.ID, &u.OrgID, &u.Email, &u.Name, &u.Role, &u.Status, &u.MxLocal, &u.MxToken, &u.MailSecret, &u.MustChange, &u.MailReady, &u.MailID, &u.Kind}, extra...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +328,7 @@ func (s *Server) boot(u *User) map[string]any {
 	s.r.QueryRow(`SELECT name, plan FROM orgs WHERE id = ?`, u.OrgID).Scan(&orgName, &plan)
 	base["user"] = map[string]any{
 		"id": u.ID, "name": u.Name, "email": u.Email, "role": u.Role,
-		"mustChange": u.MustChange, "operator": s.isOperator(u),
+		"mustChange": u.MustChange, "operator": s.isOperator(u), "agent": u.isAgent(),
 	}
 	base["org"] = map[string]any{"id": u.OrgID, "name": orgName, "plan": plan, "limits": planFor(plan)}
 	base["people"] = s.people(u.OrgID)
@@ -345,20 +352,22 @@ type Person struct {
 	Status string `json:"status"`
 	Mx     string `json:"mx"`
 	Seen   int64  `json:"seen"`
+	Agent  bool   `json:"agent,omitempty"`
 }
 
 func (s *Server) people(orgID string) []Person {
 	out := []Person{}
-	rows, err := s.r.Query(`SELECT id, name, email, role, status, mx_local, last_seen FROM users WHERE org_id = ? ORDER BY name COLLATE NOCASE`, orgID)
+	rows, err := s.r.Query(`SELECT id, name, email, role, status, mx_local, last_seen, kind FROM users WHERE org_id = ? ORDER BY name COLLATE NOCASE`, orgID)
 	if err != nil {
 		return out
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var p Person
-		var mx string
-		rows.Scan(&p.ID, &p.Name, &p.Email, &p.Role, &p.Status, &mx, &p.Seen)
+		var mx, kind string
+		rows.Scan(&p.ID, &p.Name, &p.Email, &p.Role, &p.Status, &mx, &p.Seen, &kind)
 		p.Mx = s.mxid(mx)
+		p.Agent = kind == "agent"
 		out = append(out, p)
 	}
 	return out

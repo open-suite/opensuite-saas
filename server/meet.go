@@ -18,6 +18,7 @@ type Meeting struct {
 	Owner   string `json:"owner"`
 	Created int64  `json:"created"`
 	Used    int64  `json:"used"`
+	URL     string `json:"url,omitempty"` // the API names the link; the app builds its own
 }
 
 var meetCodeRe = regexp.MustCompile(`^[a-z]{3}-[a-z]{4}-[a-z]{3}$`)
@@ -48,25 +49,35 @@ func (s *Server) meetList(u *User) []Meeting {
 	return out
 }
 
-func (s *Server) handleMeetList(w http.ResponseWriter, r *http.Request, u *User) { ok(w, s.meetList(u)) }
+func (s *Server) handleMeetList(w http.ResponseWriter, r *http.Request, u *User) {
+	ok(w, s.meetList(u))
+}
 
 func (s *Server) handleMeetCreate(w http.ResponseWriter, r *http.Request, u *User) {
 	var in struct{ Code, Title string }
 	readJSON(r, &in)
-	// The client may mint the code so the room opens without waiting.
-	code := in.Code
+	m, code, msg := s.createMeeting(u, in.Code, in.Title)
+	if code != 0 {
+		fail(w, code, msg)
+		return
+	}
+	ok(w, m)
+}
+
+// createMeeting makes a room. The app may mint the code so the room opens
+// without waiting; otherwise one is made here.
+func (s *Server) createMeeting(u *User, code, title string) (*Meeting, int, string) {
 	if !meetCodeRe.MatchString(code) {
 		code = newMeetCode()
 	}
-	title := strings.TrimSpace(in.Title)
+	title = strings.TrimSpace(title)
 	if len(title) > 120 {
 		title = title[:120]
 	}
 	if _, err := s.w.Exec(`INSERT INTO meetings(code, org_id, owner_id, title, created) VALUES(?,?,?,?,?)`, code, u.OrgID, u.ID, title, now()); err != nil {
-		fail(w, 409, "That meeting code is in use.")
-		return
+		return nil, 409, "That meeting code is in use."
 	}
-	ok(w, Meeting{Code: code, Title: title, Owner: u.ID, Created: now()})
+	return &Meeting{Code: code, Title: title, Owner: u.ID, Created: now()}, 0, ""
 }
 
 func (s *Server) handleMeetDelete(w http.ResponseWriter, r *http.Request, u *User) {

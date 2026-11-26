@@ -17,6 +17,10 @@ function Card({ title, children, foot }) {
   )
 }
 
+// consentReturn keeps an app's connection request across signing up: the
+// consent screen is the only page a new organisation returns to.
+const consentReturn = () => (location.pathname === '/oauth/authorize' ? '?next=' + encodeURIComponent(location.pathname + location.search) : '')
+
 export function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -36,7 +40,7 @@ export function Login() {
   }
   const b = boot.value
   return (
-    <Card title="Sign in" foot={b?.signup !== 'closed' && <>New here? <a href="/signup">Create an organisation</a></>}>
+    <Card title="Sign in" foot={b?.signup !== 'closed' && <>New here? <a href={'/signup' + consentReturn()}>Create an organisation</a></>}>
       <form onSubmit={submit} style={{ display: 'contents' }}>
         {error && <div class="form-error" role="alert">{error}</div>}
         <Field label="Address">
@@ -77,7 +81,8 @@ export function Signup() {
     setError('')
     try {
       setBoot(await post('/api/signup', f))
-      navigate('/', { replace: true })
+      const next = new URLSearchParams(location.search).get('next') || ''
+      navigate(next.startsWith('/oauth/authorize?') ? next : '/', { replace: true })
     } catch (err) {
       setError(err.message)
       setBusy(false)

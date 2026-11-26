@@ -30,13 +30,14 @@ export async function importBlob(file, folder = '') {
   const title = file.name.replace(/\.[^.]+$/, '')
   try {
     if (ext === 'pptx') {
-      const { importDeck } = await import('./slides-pptx.js')
+      const { importDeck } = await import('./slides-core.js')
       navigate(docPath(await importDeck(file, title, (kind, opts) => createDoc(kind, { ...opts, folder }))))
     } else if (ext === 'xlsx' || ext === 'csv') {
       // The spreadsheet engine reads these itself, on this device.
+      const sheet = await import('./sheet.jsx')
       const snap = ext === 'csv'
-        ? await (await import('../lib/csv.js')).csvToSnapshot(await file.text(), title)
-        : await (await import('./sheet.jsx')).xlsxToSnapshot(new Uint8Array(await file.arrayBuffer()), title)
+        ? await sheet.csvToSnapshot(await file.text(), title)
+        : await sheet.xlsxToSnapshot(new Uint8Array(await file.arrayBuffer()), title)
       const { doc } = createDoc('sheet', { title, folder, snapshot: await toBase64(new Blob([snap])) })
       navigate(docPath(doc))
     } else {

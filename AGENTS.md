@@ -125,6 +125,47 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   `tests/e2e-backdrop.cjs` reads the pixels; give it `OS_PORTRAIT` to judge
   edges on a real photo.
 
+## The public API, MCP server and agents (added 2026-11-26)
+
+- **One table.** Every operation of `/api/v1` is an `apiOp` in `api.go` (or
+  beside its area: `mailapi.go`, `calapi.go`, `chatapi.go`, `content.go`).
+  The table routes the request, writes `openapi.json` and the reference
+  page, and is the MCP server's tool list (`mcp.go` runs a tool by calling
+  the same handler in-process through `runOp`). A new capability is one
+  entry; never add a route or a tool outside it. `Write` and `Admin` are
+  enforced in `permit` for HTTP and MCP alike; a handler that reuses an
+  app handler must not rely on that handler's old `s.admin` wrapper.
+- **Reuse.** Where the app already does the job the entry points at the
+  app's handler; otherwise the API builds exactly what the app sends (mail
+  as `lib/mail.js` does, events as `calendar-event.jsx` does). Mail sent by
+  the API, invitations included, passes `recipientsAllowed` (`rawCalls`).
+- **Credentials.** `Authorization: Bearer` works on `/api/v1` and `/mcp`
+  only; with a Bearer header the cookie is ignored, so `guard` lets those
+  requests through cross-site. App routes stay cookie-only. Tokens are
+  SHA-256 hashes in `api_tokens`; an OAuth connection is a row there too
+  (short-lived `hash`, rotating `refresh_hash`). Suspension stops tokens by
+  the `status` check in `bearerUser`; removal deletes them by foreign key.
+- **Agents** are `users.kind = 'agent'` with an empty `pw_hash` (never
+  matches). They count towards the plan's people limit. Only agents' tokens
+  can be managed by an administrator; people manage their own.
+- **Content engine** (`engine.go`, `web/src/headless/`). The server still
+  never parses documents: it passes snapshot and log to the app's own code
+  in Node and applies the returned update through `applyUpdate` with no
+  peer, so it is stored, versioned, fanned out and merged like a browser's.
+  The engine is started on demand and stops after three idle minutes. Any
+  logic the engine needs must live in a module the app imports too
+  (`doc-format.js`, `slides-doc.js`, `sheet-data.js`, `lib/invite.js`,
+  `lib/occurrences.js`); `web/scripts/check-headless.mjs` checks every op.
+  The server runs the pinned Node from `install.sh` (`OS_NODE`).
+- **MCP** speaks 2026-07-28 (stateless, `_meta` per request, mirrored
+  headers checked, `server/discover`) and, for clients that open with
+  `initialize`, 2025-11-25, 2025-06-18 and 2025-03-26. No sessions, nothing
+  pushed. OAuth follows the same revision: protected resource metadata,
+  RFC 8414 metadata, Client ID Metadata Documents (fetched only from public
+  addresses), dynamic registration, PKCE S256 only, `iss` in the response.
+- **Tests**: `server/api_test.go`, `content_test.go` (needs Node and the
+  web build) and `tests/e2e-api.cjs` (needs `MCP_SDK`).
+
 ## Engines: facts verified on 2026-11-21
 
 - **Stalwart 1.1.1** has no TOML and no REST admin API any more. All

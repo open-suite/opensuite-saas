@@ -9,7 +9,7 @@
 // when rows or columns are inserted or a sheet is renamed.
 import { Model } from '@ironcalc/wasm-xlsx'
 import { newId } from '../lib/util.js'
-import { colName } from './sheet-core.js'
+import { colName } from './sheet-data.js'
 
 const MARK = 'opensuite:charts'
 const MAX_ROWS = 400

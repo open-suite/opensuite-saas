@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'preact/hooks'
-import { UserPlus, MoreHorizontal, KeyRound, Ban, Trash2, CircleCheck, Globe, Copy, RefreshCw, ShieldCheck, Check, X as XIcon } from 'lucide-preact'
+import { UserPlus, Bot, MoreHorizontal, KeyRound, Ban, Trash2, CircleCheck, Globe, Copy, RefreshCw, ShieldCheck, Check, X as XIcon } from 'lucide-preact'
 import { boot, user, org, people, patchBoot, toast } from '../lib/store.js'
 import { parts, navigate } from '../lib/router.js'
 import { get, post, patch, del, refreshBoot } from '../lib/api.js'
 import { cx, when, bytes, copyText } from '../lib/util.js'
 import { Avatar, Button, Empty, Field, IconButton, Menu, Modal } from '../ui.jsx'
+import { Connect } from './account.jsx'
 
 const roleName = { owner: 'Owner', admin: 'Administrator', member: 'Member' }
 
@@ -21,8 +22,10 @@ function Secret({ title, email, password, onClose }) {
   )
 }
 
-function AddPerson({ domains, onClose, onCreated }) {
-  const [f, setF] = useState({ name: '', username: '', domain: domains[0], role: 'member' })
+// Adds a person, or an agent: an account with no password that works
+// through the API with tokens.
+function AddPerson({ domains, agent, onClose, onCreated }) {
+  const [f, setF] = useState({ name: '', username: '', domain: domains[0], role: 'member', ...(agent && { agent: true }) })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
@@ -36,19 +39,21 @@ function AddPerson({ domains, onClose, onCreated }) {
     setBusy(true)
     setError('')
     try {
-      const res = await post('/api/admin/users', f)
-      onCreated(res)
+      const { touched, ...body } = f
+      const res = await post('/api/admin/users', body)
+      onCreated({ ...res, name: f.name })
     } catch (err) {
       setError(err.message)
       setBusy(false)
     }
   }
   return (
-    <Modal title="Add a person" onClose={onClose} footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" busy={busy} onClick={submit}>Add person</Button></>}>
+    <Modal title={agent ? 'Add an agent' : 'Add a person'} onClose={onClose} footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" busy={busy} onClick={submit}>{agent ? 'Add agent' : 'Add person'}</Button></>}>
       <form onSubmit={submit} style={{ display: 'contents' }}>
+        {agent && <p class="muted">An agent has no password and works through the API with tokens. Agents count towards the plan's people limit.</p>}
         {error && <div class="form-error">{error}</div>}
-        <Field label="Name"><input class="input" autofocus value={f.name} onInput={suggest} required /></Field>
-        <Field label="Address" hint="Their sign-in and email address.">
+        <Field label="Name"><input class="input" autofocus value={f.name} onInput={suggest} placeholder={agent ? 'Support assistant' : undefined} required /></Field>
+        <Field label="Address" hint={agent ? 'Its email address.' : 'Their sign-in and email address.'}>
           <div class="input-group">
             <input class="input" autocapitalize="none" spellcheck={false} value={f.username} onInput={(e) => setF({ ...f, username: e.target.value, touched: true })} required />
             {domains.length > 1 ? (
@@ -94,8 +99,9 @@ function People({ data, reload }) {
   }
   return (
     <>
-      <div class="row" style={{ marginBottom: 14 }}>
-        <span class="grow muted">{list.length} of {limit ?? '…'} people on the {data?.limits?.label || ''} plan</span>
+      <div class="row" style={{ marginBottom: 14, flexWrap: 'wrap' }}>
+        <span class="grow muted" style={{ minWidth: 180 }}>{list.length} of {limit ?? '…'} people on the {data?.limits?.label || ''} plan</span>
+        <Button icon={Bot} onClick={() => setDialog({ type: 'add', agent: true })}>Add agent</Button>
         <Button kind="primary" icon={UserPlus} onClick={() => setDialog({ type: 'add' })}>Add person</Button>
       </div>
       <div class="card">
@@ -113,16 +119,23 @@ function People({ data, reload }) {
                     </div>
                   </div>
                 </td>
-                <td>{p.status === 'suspended' ? <span class="badge badge-warn">Suspended</span> : <span class={cx('badge', p.role !== 'member' && 'badge-accent')}>{roleName[p.role]}</span>}</td>
+                <td>
+                  <div class="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                    {p.status === 'suspended' ? <span class="badge badge-warn">Suspended</span> : <span class={cx('badge', p.role !== 'member' && 'badge-accent')}>{roleName[p.role]}</span>}
+                    {p.agent && <span class="badge" title="No password. Works through the API with tokens.">Agent</span>}
+                  </div>
+                </td>
                 <td class="muted">{p.seen ? when(p.seen * 1000) : 'Never'}</td>
                 <td style={{ textAlign: 'right' }}>
                   {p.id !== me.id && (p.role !== 'owner' || me.role === 'owner') && (
                     <Menu align="right" trigger={<IconButton icon={MoreHorizontal} label={'Manage ' + p.name} />} items={[
                       p.role !== 'member' && { label: 'Make member', icon: ShieldCheck, onSelect: () => act(p, { role: 'member' }, 'Role changed') },
                       p.role !== 'admin' && { label: 'Make administrator', icon: ShieldCheck, onSelect: () => act(p, { role: 'admin' }, 'Role changed') },
-                      me.role === 'owner' && p.role !== 'owner' && { label: 'Make owner', icon: ShieldCheck, onSelect: () => act(p, { role: 'owner' }, 'Role changed') },
+                      me.role === 'owner' && p.role !== 'owner' && !p.agent && { label: 'Make owner', icon: ShieldCheck, onSelect: () => act(p, { role: 'owner' }, 'Role changed') },
                       { divider: true },
-                      { label: 'Reset password', icon: KeyRound, onSelect: () => act(p, { resetPassword: true }) },
+                      p.agent
+                        ? { label: 'Manage tokens', icon: KeyRound, onSelect: () => setDialog({ type: 'tokens', person: p }) }
+                        : { label: 'Reset password', icon: KeyRound, onSelect: () => act(p, { resetPassword: true }) },
                       p.status === 'active'
                         ? { label: 'Suspend', icon: Ban, onSelect: () => act(p, { status: 'suspended' }, `${p.name} can no longer sign in`) }
                         : { label: 'Reactivate', icon: CircleCheck, onSelect: () => act(p, { status: 'active' }, `${p.name} can sign in again`) },
@@ -136,11 +149,14 @@ function People({ data, reload }) {
           </tbody>
         </table>
       </div>
-      {dialog?.type === 'add' && <AddPerson domains={mailDomains} onClose={() => setDialog(null)} onCreated={(res) => { setDialog({ type: 'secret', title: 'Person added', ...res }); reload() }} />}
+      {dialog?.type === 'add' && <AddPerson domains={mailDomains} agent={dialog.agent} onClose={() => setDialog(null)} onCreated={(res) => { setDialog(dialog.agent ? { type: 'tokens', person: res, added: true } : { type: 'secret', title: 'Person added', ...res }); reload() }} />}
       {dialog?.type === 'secret' && <Secret {...dialog} onClose={() => setDialog(null)} />}
+      {dialog?.type === 'tokens' && <Connect view="AgentTokens" person={dialog.person} added={dialog.added} onClose={() => setDialog(null)} />}
       {dialog?.type === 'remove' && (
         <Modal title={`Remove ${dialog.person.name}?`} onClose={() => setDialog(null)} footer={<><Button onClick={() => setDialog(null)}>Cancel</Button><Button kind="danger" onClick={() => { remove(dialog.person); setDialog(null) }}>Remove</Button></>}>
-          <p>Their mailbox and chat account are deleted. Their documents and meeting rooms stay with the organisation and become yours.</p>
+          <p>{dialog.person.agent
+            ? 'Its mailbox and chat account are deleted and its tokens stop working. Its documents and meeting rooms stay with the organisation and become yours.'
+            : 'Their mailbox and chat account are deleted. Their documents and meeting rooms stay with the organisation and become yours.'}</p>
         </Modal>
       )}
     </>

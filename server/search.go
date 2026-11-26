@@ -111,6 +111,7 @@ type DocHit struct {
 	// Snippet is text around the match; the matched words sit between the
 	// control characters \x02 and \x03.
 	Snippet string `json:"snippet"`
+	URL     string `json:"url,omitempty"` // filled in by the API, which names where it opens
 }
 
 // searchDocs finds documents the user may open whose title or text matches.

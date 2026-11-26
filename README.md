@@ -51,8 +51,8 @@ at that distance, 47 KB). Memory in use for the whole suite: about 500 MB.
 
 | Path | What |
 | --- | --- |
-| `server/` | Go backend. `main.go` routes, `auth.go`, `admin.go`, `docs.go` (sync hub), `versions.go` (history), `files.go` (drive), `search.go` (index), `mail.go`, `calendar.go`, `chat.go`, `meet.go`, `tls.go` (ACME), `web.go`, `convert.go` (pandoc). |
-| `web/` | Preact app. `src/lib/` data layers (`store`, `api`, `sync`, `mail`, `calendar`, `contacts`, `files`, `search`, `matrix`), `src/apps/` screens, `src/sw.js` offline shell. |
+| `server/` | Go backend. `main.go` routes, `auth.go`, `admin.go`, `docs.go` (sync hub), `versions.go` (history), `files.go` (drive), `search.go` (index), `mail.go`, `calendar.go`, `chat.go`, `meet.go`, `tls.go` (ACME), `web.go`, `convert.go` (pandoc). The public API: `api.go` (the operation table), `mailapi.go`, `calapi.go`, `chatapi.go`, `content.go` with `engine.go` (document content), `tokens.go`, `oauth.go`, `mcp.go`, `openapi.go`, `schema.go`. |
+| `web/` | Preact app. `src/lib/` data layers (`store`, `api`, `sync`, `mail`, `calendar`, `contacts`, `files`, `search`, `matrix`), `src/apps/` screens, `src/sw.js` offline shell. `src/headless/` builds the app's document code into the content engine (`dist-headless/engine.mjs`). |
 | `deploy/` | `deploy.sh` (build and ship), `install.sh` (server side, idempotent), nginx and systemd files, `coexist-k3s.sh` (shared demo box only). |
 | `dev/` | `mail.sh` (a loopback mail engine), `run.sh` (build and run a checkout locally). |
 | `tests/` | `e2e.cjs` two-person end-to-end run and one `e2e-<part>.cjs` per newer part; `perf.cjs` and `perf-<part>.cjs` performance budgets. Backend tests are `server/*_test.go`. |
@@ -80,7 +80,8 @@ deploy/deploy.sh root@server office.example.com admin@example.com
 ```
 
 That builds the web app and a static Linux binary, ships them, and runs
-`install.sh`, which installs nginx, pandoc and the three engines, generates
+`install.sh`, which installs nginx, pandoc, Node (for the content engine,
+run on demand like pandoc) and the three engines, generates
 secrets once (`/etc/opensuite/secrets.env`), configures the mail engine on
 first run, and starts everything. Re-running it is the release process; a
 service restarts only if its binary or configuration changed. Optional
@@ -99,7 +100,11 @@ Check a deployment:
 ```sh
 OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... node tests/e2e.cjs
 OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... node tests/perf.cjs
+OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... MCP_SDK=.../node_modules/@modelcontextprotocol/sdk node tests/e2e-api.cjs
 ```
+
+`e2e-api.cjs` drives the API and the MCP server (with the official MCP
+client, including the OAuth flow) without a browser.
 
 ## What it includes
 
@@ -137,6 +142,16 @@ OS_BASE=https://office.example.com OS_E2E_USER=... OS_E2E_PASS=... node tests/pe
   their contents, files, calendar, mail, chat and meetings.
 - Home: today's agenda, recent documents, inbox, conversations and meeting
   rooms in one view.
+- An API for everything: a versioned JSON API at `/api/v1` covering every
+  part above and the administration, described by an OpenAPI 3.1 document
+  (`/api/v1/openapi.json`) and a reference page (`/api/v1/reference`), and
+  the same operations as an MCP server at `/mcp`, so an AI assistant can be
+  connected by its address alone (OAuth 2.1). People make API tokens in
+  Account settings (full access or read only); administrators add agents,
+  members without a password that act only through tokens, and count
+  towards the plan's people limit like anyone with a mailbox. No extra cost,
+  and no limits beyond abuse protection (1,200 calls a minute per token, 200
+  messages an hour per member).
 
 Not included yet: wiki, payments, mail and calendar access from other apps
 (IMAP is running but people have no app passwords yet), chat federation with

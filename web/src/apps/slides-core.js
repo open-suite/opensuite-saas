@@ -1,14 +1,8 @@
 // The presentation controller. A deck is a shared document held on the
 // device: it opens from local storage, every edit applies at once, and the
 // server relays and backs up. The view (slides.jsx) draws whatever this holds
-// and calls its methods; nothing here renders.
-//
-// Shape of the shared document:
-//   meta   : { theme, transition }
-//   slides : id -> { pos, layout, bg, notes (text), els: id -> element }
-//   element: { type: box|image|line, geometry, style, z, text (rich text) }
-// Slides and elements are keyed by id and ordered by a number (pos, z), so a
-// reorder is one small write that never disturbs what a colleague is typing.
+// and calls its methods; nothing here renders. The document's shape is
+// described in slides-doc.js.
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness'
@@ -18,73 +12,15 @@ import { api } from '../lib/api.js'
 import { DocSocket, fetchState } from '../lib/sync.js'
 import { findDoc, whenCreated, isFresh } from '../lib/docs.js'
 import { colorFor, newId } from '../lib/util.js'
-import { W, H, themeOf, slideColors, slideVars, layouts, bounds, outer, union, shifted, between, round, isLine, isShape, frameCss, textCss, textPad } from './slides-model.js'
-import { textJSON, textPlain, fillText, isBlank, forget, createTextEditor, formatAll, describeAll, rehearse as rehearseText, ySyncPluginKey, paragraphs } from './slides-text.js'
+import { W, H, themeOf, slideColors, slideVars, bounds, outer, union, shifted, between, round, isShape, frameCss, textCss, textPad } from './slides-model.js'
+import { isBlank, forget, createTextEditor, formatAll, describeAll, rehearse as rehearseText, ySyncPluginKey, paragraphs } from './slides-text.js'
+import {
+  readEl, elJSON, slideJSON, writeEl, writeSlide, layoutEls, buildDeck, seedDeck, slideOrder, elsOf, deckText, deckJSON,
+  placeSlides, removeSlides, relayout, retype,
+} from './slides-doc.js'
 
 const REMOTE = 'remote'
-const SEED = 'seed'
 export const LOCAL = 'local'
-
-// --- plain data <-> shared document ------------------------------------------
-
-export function readEl(m) {
-  const o = {}
-  m.forEach((v, k) => (o[k] = v))
-  return o
-}
-
-export function elJSON(m) {
-  const o = readEl(m)
-  if (o.type === 'box') o.text = textJSON(o.text)
-  return o
-}
-
-export function slideJSON(m) {
-  return {
-    layout: m.get('layout') || 'blank', bg: m.get('bg') || null, notes: m.get('notes')?.toString() || '',
-    els: [...m.get('els').values()].map(elJSON).sort((a, b) => (a.z || 0) - (b.z || 0)),
-  }
-}
-
-export function writeEl(els, data) {
-  const m = new Y.Map()
-  for (const [k, v] of Object.entries(data)) if (k !== 'text' && v !== undefined && v !== null) m.set(k, v)
-  if (data.type === 'box') m.set('text', new Y.XmlFragment())
-  els.set(data.id, m)
-  if (data.type === 'box') fillText(m.get('text'), data.text)
-  return m
-}
-
-export function writeSlide(slides, id, pos, data) {
-  const m = new Y.Map()
-  m.set('pos', pos)
-  m.set('layout', data.layout || 'blank')
-  if (data.bg) m.set('bg', data.bg)
-  m.set('notes', new Y.Text(data.notes || ''))
-  m.set('els', new Y.Map())
-  slides.set(id, m)
-  const els = m.get('els')
-  let z = 1
-  for (const e of data.els || []) writeEl(els, { ...e, id: e.id || newId(8), z: z++ })
-  return m
-}
-
-// The boxes a layout starts with.
-export function layoutEls(layout) {
-  return (layouts[layout] || layouts.blank).els.map((p) =>
-    p.type === 'image' ? { type: 'image', role: p.role, src: '', x: p.x, y: p.y, w: p.w, h: p.h, rot: 0 }
-      : { type: 'box', shape: 'none', role: p.role, slot: p.slot, x: p.x, y: p.y, w: p.w, h: p.h, rot: 0, valign: p.valign })
-}
-
-// buildDeck fills an empty document from plain data (a new deck, an import).
-export function buildDeck(ydoc, data) {
-  const slides = ydoc.getMap('slides'), meta = ydoc.getMap('meta')
-  ydoc.transact(() => {
-    meta.set('theme', data.theme || 'paper')
-    if (data.transition) meta.set('transition', data.transition)
-    data.slides.forEach((s, i) => writeSlide(slides, s.id || newId(10), i + 1, s))
-  }, SEED)
-}
 
 // --- decks kept in memory ---------------------------------------------------
 
@@ -161,6 +97,44 @@ function imageSize(src) {
     img.onerror = () => resolve({ w: 640, h: 360 })
     img.src = src
   })
+}
+
+// imageData reads a stored picture for a PowerPoint export (slides-pptx.js).
+export async function imageData(src) {
+  const blob = await (await fetch(src)).blob()
+  const data = await new Promise((resolve) => {
+    const r = new FileReader()
+    r.onload = () => resolve(r.result)
+    r.readAsDataURL(blob)
+  })
+  const size = await new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => resolve(null)
+    img.src = data
+  })
+  return { data, size }
+}
+
+function base64(bytes) {
+  let s = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
+  return btoa(s)
+}
+
+// importDeck makes a new presentation from a .pptx file and returns it,
+// already stored on this device so that it opens at once. The reader loads
+// only now, and the caller hands in createDoc (lib/docs.js).
+export async function importDeck(file, title, createDoc) {
+  const { pptxToDeck } = await import('./slides-pptx.js')
+  const data = await pptxToDeck(file, uploadImage)
+  const tmp = new Y.Doc()
+  buildDeck(tmp, data)
+  const state = Y.encodeStateAsUpdate(tmp)
+  tmp.destroy()
+  const { doc } = createDoc('slides', { title, snapshot: base64(state) })
+  keepWarm(doc.id, state)
+  return doc
 }
 
 // --- the controller ---------------------------------------------------------
@@ -244,13 +218,8 @@ export class Deck {
     this.onChange?.()
   }
 
-  // seed gives an empty deck its first slide. The ids are fixed, so two
-  // devices doing this at the same moment end up with one slide, not two.
   seed() {
-    this.ydoc.transact(() => {
-      if (!this.meta.get('theme')) this.meta.set('theme', 'paper')
-      if (!this.slides.has('first')) writeSlide(this.slides, 'first', 1, { layout: 'title', els: layoutEls('title').map((e, i) => ({ ...e, id: 'first' + i })) })
-    }, SEED)
+    seedDeck(this.ydoc)
   }
 
   // --- sync -----------------------------------------------------------------
@@ -360,10 +329,7 @@ export class Deck {
   // --- reading --------------------------------------------------------------
 
   order() {
-    if (!this.cache) {
-      this.cache = [...this.slides.entries()].map(([id, m]) => ({ id, pos: m.get('pos') || 0 }))
-        .sort((a, b) => a.pos - b.pos || (a.id < b.id ? -1 : 1)).map((s) => s.id)
-    }
+    this.cache ||= slideOrder(this.slides)
     return this.cache
   }
 
@@ -383,9 +349,7 @@ export class Deck {
   }
 
   els(sid = this.cur) {
-    const m = this.slides.get(sid)?.get('els')
-    if (!m) return []
-    return [...m.values()].map(readEl).sort((a, b) => (a.z || 0) - (b.z || 0) || (a.id < b.id ? -1 : 1))
+    return elsOf(this.slides.get(sid))
   }
 
   selected() {
@@ -554,50 +518,20 @@ export class Deck {
 
   deleteSlides(ids = this.pickedInOrder()) {
     this.stopEdit()
-    this.mutate(() => {
-      for (const id of ids) this.slides.delete(id)
-      if (this.slides.size === 0) writeSlide(this.slides, newId(10), 1, { layout: 'titleBody', els: layoutEls('titleBody') })
-    })
+    this.mutate(() => removeSlides(this.slides, ids))
   }
 
   // moveSlides puts the given slides, in order, before position `index`.
   moveSlides(ids, index) {
-    const order = this.order()
-    const rest = order.filter((id) => !ids.includes(id))
-    const before = order.slice(0, index).filter((id) => !ids.includes(id)).length
-    let a = this.slides.get(rest[before - 1])?.get('pos') ?? null
-    const b = this.slides.get(rest[before])?.get('pos') ?? null
-    this.mutate(() => {
-      for (const id of ids) {
-        a = between(a, b)
-        this.slides.get(id).set('pos', a)
-      }
-    })
+    const before = this.order().slice(0, index).filter((id) => !ids.includes(id)).length
+    this.mutate(() => placeSlides(this.slides, ids, before))
   }
 
-  // setLayout rearranges a slide: boxes that play a part move to their new
-  // places, missing ones appear, and empty ones that no longer fit go.
   setLayout(layout, sid = this.cur) {
     const slide = this.slides.get(sid)
     if (!slide) return
     this.stopEdit()
-    this.mutate(() => {
-      const els = slide.get('els')
-      const have = [...els.values()].map(readEl).filter((e) => e.role).sort((a, b) => (a.slot || 0) - (b.slot || 0) || a.x - b.x)
-      let z = Math.max(0, ...[...els.values()].map((m) => m.get('z') || 0))
-      for (const want of layoutEls(layout)) {
-        const i = have.findIndex((e) => e.role === want.role)
-        if (i < 0) {
-          writeEl(els, { ...want, id: newId(8), z: ++z })
-          continue
-        }
-        const m = els.get(have.splice(i, 1)[0].id)
-        for (const k of ['x', 'y', 'w', 'h', 'valign', 'slot']) if (want[k] !== undefined) m.set(k, want[k])
-        m.set('rot', 0)
-      }
-      for (const e of have) if (e.type === 'image' ? !e.src : isBlank(e.text)) els.delete(e.id)
-      slide.set('layout', layout)
-    })
+    this.mutate(() => relayout(slide, layout))
   }
 
   setBackground(color, sid = this.cur) {
@@ -606,17 +540,8 @@ export class Deck {
 
   setNotes(text, sid = this.cur) {
     const y = this.slides.get(sid)?.get('notes')
-    if (!y) return
-    const old = y.toString()
-    if (old === text) return
-    let a = 0
-    while (a < old.length && a < text.length && old[a] === text[a]) a++
-    let b = 0
-    while (b < old.length - a && b < text.length - a && old[old.length - 1 - b] === text[text.length - 1 - b]) b++
-    this.mutate(() => {
-      if (old.length - a - b > 0) y.delete(a, old.length - a - b)
-      if (text.length - a - b > 0) y.insert(a, text.slice(a, text.length - b))
-    }, true)
+    if (!y || y.toString() === text) return
+    this.mutate(() => retype(y, text), true)
   }
 
   topZ() {
@@ -948,11 +873,11 @@ export class Deck {
   // plainText is the deck as words only, slide by slide with its notes: what
   // a search index wants.
   plainText() {
-    return this.order().map((id) => [...this.els(id).filter((e) => e.type === 'box').map((e) => textPlain(e.text)), this.notes(id)].filter(Boolean).join('\n')).filter(Boolean).join('\n\n')
+    return deckText(this.slides)
   }
 
   toJSON() {
-    return { theme: this.themeId(), transition: this.meta.get('transition') || 'fade', slides: this.order().map((id) => ({ id, ...slideJSON(this.slides.get(id)) })) }
+    return deckJSON(this.slides, this.meta)
   }
 }
 

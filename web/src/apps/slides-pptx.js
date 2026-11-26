@@ -5,11 +5,11 @@
 // Out: every slide becomes native PowerPoint text, shapes, lines and pictures
 // that stay editable there. In: text, pictures, basic shapes, lines and notes
 // are read; charts, tables, SmartArt, animations and master artwork are not.
+// Pictures are fetched and stored by the caller, so the server's headless
+// engine (src/headless/) runs this same code.
 import PptxGen from 'pptxgenjs'
 import JSZip from 'jszip'
-import * as Y from 'yjs'
 import { W, H, themeOf, fonts, fontKey, slideColors, decor, resolve, roleStyle, textColor, textPad, isShape } from './slides-model.js'
-import { buildDeck, keepWarm, uploadImage } from './slides-core.js'
 
 const IN = 96 // slide units per inch
 const hex = (c) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c.slice(1).toUpperCase() : null)
@@ -63,24 +63,10 @@ function textRuns(content, align) {
   return paras.flat()
 }
 
-async function imageData(src) {
-  const blob = await (await fetch(src)).blob()
-  const data = await new Promise((resolve) => {
-    const r = new FileReader()
-    r.onload = () => resolve(r.result)
-    r.readAsDataURL(blob)
-  })
-  const size = await new Promise((resolve) => {
-    const img = new Image()
-    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
-    img.onerror = () => resolve(null)
-    img.src = data
-  })
-  return { data, size }
-}
-
-// deckToPptx turns Deck.toJSON() into a .pptx file.
-export async function deckToPptx(deck, title) {
+// deckToPptx turns Deck.toJSON() into a .pptx file. `image(src)` resolves to
+// a picture's { data (a data: URL), size ({ w, h } or null) }; a picture it
+// cannot supply is left out.
+export async function deckToPptx(deck, title, image) {
   const pptx = new PptxGen()
   pptx.layout = 'LAYOUT_WIDE' // 13.33 × 7.5 inches: our 1280 × 720 at 96 per inch
   pptx.title = title || 'Untitled'
@@ -111,7 +97,7 @@ export async function deckToPptx(deck, title) {
       } else if (e.type === 'image') {
         if (!e.src) continue
         try {
-          const { data, size } = await imageData(e.src)
+          const { data, size } = await image(e.src)
           const frame = { x: e.x / IN, y: e.y / IN, w: e.w / IN, h: e.h / IN }
           const natural = size ? { w: frame.w, h: (frame.w * size.h) / size.w } : frame
           slide.addImage({ data, x: frame.x, y: frame.y, w: natural.w, h: natural.h, rotate: e.rot || 0, altText: e.alt || 'Picture', sizing: { type: 'cover', w: frame.w, h: frame.h } })
@@ -415,25 +401,4 @@ export async function pptxToDeck(file, upload) {
   }
   if (!slides.length) throw new Error('That presentation has no slides.')
   return { theme: 'paper', slides, skipped }
-}
-
-function base64(bytes) {
-  let s = ''
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
-  return btoa(s)
-}
-
-// importDeck makes a new presentation from a .pptx file and returns it,
-// already stored on this device so that it opens at once. The caller hands
-// in createDoc (lib/docs.js) so this file stays out of the start-up bundle's
-// import graph.
-export async function importDeck(file, title, createDoc) {
-  const data = await pptxToDeck(file, uploadImage)
-  const tmp = new Y.Doc()
-  buildDeck(tmp, data)
-  const state = Y.encodeStateAsUpdate(tmp)
-  tmp.destroy()
-  const { doc } = createDoc('slides', { title, snapshot: base64(state) })
-  keepWarm(doc.id, state)
-  return doc
 }

@@ -1,5 +1,6 @@
 node_modules/
 web/dist/
+web/dist-headless/
 build/
 server/data/
 *.db

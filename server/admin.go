@@ -108,8 +108,14 @@ func (s *Server) mailDomainsFor(orgID string) []string {
 
 func tempPassword() string { return newID(4) + "-" + newID(4) + "-" + newID(4) }
 
+// handleUserCreate adds a person, or with "agent" an agent member. An agent
+// counts towards the plan's people limit like anyone else: it has a mailbox,
+// storage and a chat account, which is what the limit is about.
 func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, u *User) {
-	var in struct{ Name, Username, Domain, Role string }
+	var in struct {
+		Name, Username, Domain, Role string
+		Agent                        bool
+	}
 	if readJSON(r, &in) != nil {
 		fail(w, 400, "bad request")
 		return
@@ -142,8 +148,20 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, u *Use
 		return
 	}
 	email := in.Username + "@" + in.Domain
-	pw := tempPassword()
 	id := newID(12)
+	if in.Agent {
+		// No password at all: an empty hash never matches one.
+		_, err := s.w.Exec(`INSERT INTO users(id, org_id, email, name, role, kind, pw_hash, mx_local, mail_secret, created) VALUES(?,?,?,?,?,'agent','',?,?,?)`,
+			id, u.OrgID, email, in.Name, in.Role, s.mxLocalFor(email), newToken(), now())
+		if err != nil {
+			fail(w, 409, "That address is taken.")
+			return
+		}
+		go s.provision(s.userByID(id))
+		ok(w, map[string]any{"id": id, "email": email, "agent": true})
+		return
+	}
+	pw := tempPassword()
 	_, err := s.w.Exec(`INSERT INTO users(id, org_id, email, name, role, pw_hash, must_change, mx_local, mail_secret, created) VALUES(?,?,?,?,?,?,1,?,?,?)`,
 		id, u.OrgID, email, in.Name, in.Role, hashPassword(pw), s.mxLocalFor(email), newToken(), now())
 	if err != nil {
@@ -192,6 +210,10 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, u *Use
 		fail(w, 400, "bad request")
 		return
 	}
+	if in.ResetPassword && t.isAgent() {
+		fail(w, 409, "Agents have no password. They sign in with API tokens.")
+		return
+	}
 	lastOwner := t.Role == "owner" && s.ownerCount(u.OrgID) <= 1
 	if in.Name != nil && strings.TrimSpace(*in.Name) != "" {
 		t.Name = strings.TrimSpace(*in.Name)
@@ -206,6 +228,10 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, u *Use
 		}
 		if role == "owner" && u.Role != "owner" {
 			fail(w, 403, "Only an owner can appoint an owner.")
+			return
+		}
+		if role == "owner" && t.isAgent() {
+			fail(w, 409, "An agent can be an administrator, not an owner.")
 			return
 		}
 		if lastOwner {

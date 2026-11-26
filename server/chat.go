@@ -61,7 +61,8 @@ func (s *Server) matrix(ctx context.Context, method, path, token string, body, o
 		return 0, err
 	}
 	defer res.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	// A first sync of someone in many conversations is the largest answer.
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 32<<20))
 	if out != nil && res.StatusCode < 300 {
 		json.Unmarshal(b, out)
 	}

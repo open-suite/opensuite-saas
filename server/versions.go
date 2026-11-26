@@ -193,9 +193,12 @@ func (s *Server) versionAccess(w http.ResponseWriter, r *http.Request, u *User) 
 
 func (s *Server) handleVersionList(w http.ResponseWriter, r *http.Request, u *User) {
 	id, _, allowed := s.versionAccess(w, r, u)
-	if !allowed {
-		return
+	if allowed {
+		ok(w, s.versionList(id))
 	}
+}
+
+func (s *Server) versionList(id string) []Version {
 	out := []Version{}
 	rows, err := s.r.Query(`SELECT id, seq, created, name, auto, editors, size FROM doc_versions WHERE doc_id = ? ORDER BY created DESC, seq DESC LIMIT 500`, id)
 	if err == nil {
@@ -211,7 +214,7 @@ func (s *Server) handleVersionList(w http.ResponseWriter, r *http.Request, u *Us
 			out = append(out, v)
 		}
 	}
-	ok(w, out)
+	return out
 }
 
 // handleVersionCreate files the current state: with a name it is a named

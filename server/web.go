@@ -110,39 +110,47 @@ func (s *Server) orgUsage(orgID string) int64 {
 }
 
 func (s *Server) handleBlobPut(w http.ResponseWriter, r *http.Request, u *User) {
+	id, code, msg := s.storeBlob(u, r.URL.Query().Get("name"), r.Header.Get("Content-Type"), http.MaxBytesReader(w, r.Body, 50<<20))
+	if code != 0 {
+		fail(w, code, msg)
+		return
+	}
+	var size int64
+	s.r.QueryRow(`SELECT size FROM blobs WHERE id = ?`, id).Scan(&size)
+	ok(w, map[string]any{"id": id, "url": "/api/blobs/" + id, "size": size})
+}
+
+// storeBlob keeps a picture used inside a document (body at most 50 MB).
+func (s *Server) storeBlob(u *User, name, mime string, body io.Reader) (string, int, string) {
 	var plan string
 	s.r.QueryRow(`SELECT plan FROM orgs WHERE id = ?`, u.OrgID).Scan(&plan)
 	if s.orgUsage(u.OrgID) > int64(planFor(plan).StorageGB)<<30 {
-		fail(w, 507, "Your organisation's storage is full.")
-		return
+		return "", 507, "Your organisation's storage is full."
 	}
 	id := newID(20)
 	path := filepath.Join(s.cfg.DataDir, "blobs", id)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o640)
 	if err != nil {
-		fail(w, 500, "storage error")
-		return
+		return "", 500, "storage error"
 	}
-	n, err := io.Copy(f, http.MaxBytesReader(w, r.Body, 50<<20))
+	n, err := io.Copy(f, io.LimitReader(body, 50<<20+1))
 	f.Close()
-	if err != nil {
+	if err != nil || n > 50<<20 {
 		os.Remove(path)
-		fail(w, 413, "That file is too large (50 MB limit).")
-		return
+		return "", 413, "That file is too large (50 MB limit)."
 	}
-	mime := r.Header.Get("Content-Type")
 	if mime == "" {
 		mime = "application/octet-stream"
 	}
 	s.w.Exec(`INSERT INTO blobs(id, org_id, owner_id, name, mime, size, created) VALUES(?,?,?,?,?,?,?)`,
-		id, u.OrgID, u.ID, r.URL.Query().Get("name"), mime, n, now())
-	ok(w, map[string]any{"id": id, "url": "/api/blobs/" + id, "size": n})
+		id, u.OrgID, u.ID, name, mime, n, now())
+	return id, 0, ""
 }
 
 func (s *Server) handleBlobGet(w http.ResponseWriter, r *http.Request, u *User) {
 	var mime, name string
 	if s.r.QueryRow(`SELECT mime, name FROM blobs WHERE id = ? AND org_id = ?`, r.PathValue("id"), u.OrgID).Scan(&mime, &name) != nil {
-		http.NotFound(w, r)
+		fail(w, 404, "No such picture.")
 		return
 	}
 	// Uploads are served as data, never as a page on our origin.

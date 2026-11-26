@@ -33,6 +33,9 @@ export OS_WEB="$ROOT/web/dist"
 export OS_SECRET="$(cat "$DATA/secret")"
 export OS_SIGNUP=open
 export OS_OPERATORS="ada@$OS_MAIL_DOMAIN"
+# The content engine (web/dist-headless, built with the web app) runs in the
+# Node this shell has.
+export OS_NODE="${OS_NODE:-$(command -v node)}"
 if [ -f "$DEV/mail/admin" ] && curl -fs -o /dev/null http://127.0.0.1:8446/; then
   export OS_MAIL_URL=http://127.0.0.1:8446
   export OS_MAIL_ADMIN="$(cat "$DEV/mail/admin")"

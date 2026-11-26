@@ -24,7 +24,7 @@ import { Mail } from './apps/mail.jsx'
 import { Chat } from './apps/chat.jsx'
 import { MeetHome } from './apps/meet.jsx'
 import { Admin } from './apps/admin.jsx'
-import { Account } from './apps/account.jsx'
+import { Account, Connect, loadConnect } from './apps/account.jsx'
 import { SearchPalette, SearchPage, SearchButton } from './apps/search.jsx'
 
 // The three heavy engines load on their own and are fetched in the
@@ -107,7 +107,10 @@ function App() {
     startFiles()
     startCalendar()
     startContacts()
-    idle(() => Object.keys(heavy).forEach(load))
+    idle(() => {
+      Object.keys(heavy).forEach(load)
+      loadConnect()
+    })
   }, [u?.id, b?.chat?.ready, b?.mail?.ready])
 
   // A meeting link works for anyone, signed in or not.
@@ -126,6 +129,10 @@ function App() {
     return <>{p[0] === 'signup' ? <Signup /> : <Login />}<Toasts /></>
   }
   if (u.mustChange) return <><SetPassword /><Toasts /></>
+
+  // Another app asking to use this account. Sign-in (above) keeps the path
+  // and its query string, so this screen follows it.
+  if (p[0] === 'oauth' && p[1] === 'authorize') return <><Connect view="Consent" fallback={<div class="auth" />} /><Toasts /></>
 
   const section = { d: 'docs', s: 'docs', p: 'docs', files: 'docs', account: '' }[p[0]] ?? (p[0] || 'home')
   let view

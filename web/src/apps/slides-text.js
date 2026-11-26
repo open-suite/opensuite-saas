@@ -67,6 +67,8 @@ function kit() {
   return made
 }
 
+export const textSchema = () => kit().schema
+
 // --- reading ----------------------------------------------------------------
 
 const cache = new WeakMap() // fragment -> { html, plain }

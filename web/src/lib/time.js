@@ -139,16 +139,34 @@ export const weekdayName = (ms, width = 'short') => fWeekday[width].format(ms)
 const fMonthDay = f({ weekday: 'short', month: 'short' })
 export const weekdayMonth = (ms) => fMonthDay.format(ms)
 
-// span describes when an event happens, for popovers, mail and the agenda.
-export function span(start, end, allDay) {
-  const year = new Date(start).getFullYear() !== new Date().getFullYear()
-  const day = (ms) => (year ? fDayYear : fDay).format(ms)
+// Formatters for text written in another zone than the viewer's: invitation
+// mails composed on the server (lib/invite.js) are in the sender's zone.
+const zoned = new Map()
+function formatsIn(zone) {
+  if (zone === localZone) return { day: fDay, dayYear: fDayYear, time: fTime }
+  let z = zoned.get(zone)
+  if (!z) {
+    const fz = (opts) => f({ ...opts, timeZone: zone })
+    zoned.set(zone, (z = { day: fz({ weekday: 'short', day: 'numeric', month: 'short' }), dayYear: fz({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }), time: fz({ hour: 'numeric', minute: '2-digit' }) }))
+  }
+  return z
+}
+
+// span describes when an event happens, for popovers, mail and the agenda,
+// in the viewer's zone unless another is given.
+export function span(start, end, allDay, zone = localZone) {
+  const fmt = formatsIn(zone)
+  const yearOf = (ms) => new Date(wallIn(ms, zone)).getUTCFullYear()
+  const dayOf = (ms) => Math.floor(wallIn(ms, zone) / DAY)
+  const year = yearOf(start) !== yearOf(Date.now())
+  const day = (ms) => (year ? fmt.dayYear : fmt.day).format(ms)
+  const time = (ms) => fmt.time.format(ms)
   if (allDay) {
     const last = end - DAY
     return last <= start ? day(start) : `${day(start)} – ${day(last)}`
   }
-  if (sameDay(start, end) || end - start <= 0) return `${day(start)}, ${hhmm(start)} – ${hhmm(end)}`
-  return `${day(start)}, ${hhmm(start)} – ${day(end)}, ${hhmm(end)}`
+  if (dayOf(start) === dayOf(end) || end - start <= 0) return `${day(start)}, ${time(start)} – ${time(end)}`
+  return `${day(start)}, ${time(start)} – ${day(end)}, ${time(end)}`
 }
 
 export const zoneLabel = (tz) => (tz || localZone).replace(/_/g, ' ')

@@ -33,6 +33,7 @@ func newTestServer(t *testing.T, tweak func(*Config)) (*Server, *httptest.Server
 	s := &Server{cfg: cfg, w: w, r: r, lim: newLimiter(), http: &http.Client{Timeout: 5 * time.Second}}
 	s.hub = newHub(s)
 	s.tls = newCertManager(s)
+	s.engine = newContentEngine(cfg)
 	ts := httptest.NewServer(s.routes())
 	t.Cleanup(func() { ts.Close(); w.Close(); r.Close() })
 	return s, ts

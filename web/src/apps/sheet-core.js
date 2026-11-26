@@ -11,7 +11,11 @@ import wasmUrl from '@ironcalc/wasm-xlsx/wasm_bg.wasm?url'
 import { DocSocket, fetchState } from '../lib/sync.js'
 import { whenCreated } from '../lib/docs.js'
 import { kvGet, kvSet } from '../lib/idb.js'
+import { csvSnapshot } from '../lib/csv.js'
 import { colorFor, debounce } from '../lib/util.js'
+import { blank, applyDiff, loadModel, xlsxSnapshot, colName, sheetText } from './sheet-data.js'
+
+export { colName }
 
 let ready
 let engineUp = false
@@ -43,8 +47,7 @@ export async function prewarmSheets(ids) {
       if (!copy?.bytes) {
         const state = await fetchState(id)
         await engine()
-        const m = state.base.length ? Model.fromBytes(state.base, 'en') : blank()
-        for (const u of state.updates) m.applyExternalDiffs(u)
+        const m = loadModel(state)
         copy = { seq: state.seq, bytes: m.toBytes() }
         m.free()
         kvSet('sheet:' + id, copy)
@@ -60,44 +63,15 @@ const MAXR = 1048576
 const MAXC = 16384
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif'
 
-const tz = (() => {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-  } catch {
-    return 'UTC'
-  }
-})()
-
-function blank(name) {
-  try {
-    return new Model(name || 'Workbook', 'en', tz, 'en')
-  } catch {
-    return new Model(name || 'Workbook', 'en', 'UTC', 'en')
-  }
-}
-
-// xlsxToSnapshot converts an uploaded workbook to the engine's own format.
+// Uploaded workbooks and .csv files are converted to the engine's own format.
 export async function xlsxToSnapshot(bytes, name) {
   await engine()
-  let m
-  try {
-    m = Model.fromXlsx(bytes, name, 'en', tz, 'en')
-  } catch {
-    m = Model.fromXlsx(bytes, name, 'en', 'UTC', 'en')
-  }
-  const out = m.toBytes()
-  m.free()
-  return out
+  return xlsxSnapshot(bytes, name)
 }
 
-export function colName(c) {
-  let s = ''
-  while (c > 0) {
-    c--
-    s = String.fromCharCode(65 + (c % 26)) + s
-    c = Math.floor(c / 26)
-  }
-  return s
+export async function csvToSnapshot(text, name) {
+  await engine()
+  return csvSnapshot(text, name)
 }
 
 export class Sheet {
@@ -164,8 +138,7 @@ export class Sheet {
     if (this.frozen) {
       this.canEdit = false
       try {
-        this.model = this.frozen.base.length ? Model.fromBytes(this.frozen.base, 'en') : blank(this.title)
-        for (const u of this.frozen.updates) this.apply(u)
+        this.model = loadModel(this.frozen, this.title)
       } catch {}
     }
     if (!this.model) this.model = blank(this.title)
@@ -258,24 +231,7 @@ export class Sheet {
       },
     }, since, whenCreated(this.id))
     // Search: the socket sends these words to the server's index (lib/sync.js).
-    this.sock.text = () => {
-      const m = this.model
-      const lines = []
-      let size = 0
-      m.getWorksheetsProperties().forEach((ws, s) => {
-        if (ws.state && ws.state !== 'visible') return // the hidden sheet that stores charts
-        lines.push(ws.name)
-        const rows = new Set()
-        for (let c = 1; c <= 60; c++) for (const r of m.getRowsWithData(s, c)) rows.add(r)
-        for (const r of [...rows].sort((a, b) => a - b)) {
-          if (size > 400000) return
-          const line = [...m.getColumnsWithData(s, r)].sort((a, b) => a - b).map((c) => m.getFormattedCellValue(s, r, c)).filter(Boolean).join(' ')
-          size += line.length
-          if (line) lines.push(line)
-        }
-      })
-      return lines.join('\n')
-    }
+    this.sock.text = () => sheetText(this.model)
   }
 
   close() {
@@ -313,11 +269,7 @@ export class Sheet {
   // --- sync ----------------------------------------------------------------
 
   apply(diff) {
-    try {
-      this.model.applyExternalDiffs(diff)
-    } catch (e) {
-      console.warn('sheet: diff rejected', e)
-    }
+    applyDiff(this.model, diff)
   }
 
   // rebuild replays everything in the order the server settled on.

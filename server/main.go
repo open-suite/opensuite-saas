@@ -54,6 +54,9 @@ type Server struct {
 	tls  *CertManager
 	lim  *limiter
 	http *http.Client
+
+	ops    []*apiOp       // the public API (api.go), also served as MCP tools
+	engine *contentEngine // reads and writes document content (engine.go)
 }
 
 func env(k, def string) string {
@@ -122,6 +125,7 @@ func main() {
 	s := &Server{cfg: cfg, w: w, r: r, lim: newLimiter(), http: &http.Client{Timeout: 20 * time.Second}}
 	s.hub = newHub(s)
 	s.tls = newCertManager(s)
+	s.engine = newContentEngine(cfg)
 
 	// "opensuite mail-setup <engine url>" is run once by the installer.
 	if len(os.Args) == 3 && os.Args[1] == "mail-setup" {
@@ -229,6 +233,11 @@ func (s *Server) routes() http.Handler {
 	m.HandleFunc("POST /api/mail/upload", s.auth(s.handleMailUpload))
 	m.HandleFunc("GET /api/mail/events", s.auth(s.handleMailEvents))
 	m.HandleFunc("POST /api/calendar/freebusy", s.auth(s.handleFreeBusy))
+
+	// the public API, its OAuth server and the MCP server
+	s.routesAPI(m)
+	s.routesOAuth(m)
+	m.HandleFunc("/mcp", s.handleMCP)
 
 	// ACME HTTP-01 and nginx on-demand hooks
 	m.HandleFunc("GET /.well-known/acme-challenge/{token}", s.tls.handleChallenge)

@@ -41,25 +41,34 @@ func (s *Server) handleConvert(w http.ResponseWriter, r *http.Request, u *User) 
 		fail(w, 429, "Too many conversions. Try again in a minute.")
 		return
 	}
+	out, err := runPandoc(r.Context(), c, from, http.MaxBytesReader(w, r.Body, 40<<20))
+	if err != nil {
+		fail(w, 422, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", c.mime)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(out)
+}
+
+// runPandoc converts one file in a scratch directory of its own.
+func runPandoc(ctx context.Context, c conversion, from string, body io.Reader) ([]byte, error) {
 	dir, err := os.MkdirTemp("", "os-convert-")
 	if err != nil {
-		fail(w, 500, "storage error")
-		return
+		return nil, err
 	}
 	defer os.RemoveAll(dir)
 	in, out := filepath.Join(dir, "in."+from), filepath.Join(dir, "out."+c.out)
 	f, err := os.Create(in)
 	if err != nil {
-		fail(w, 500, "storage error")
-		return
+		return nil, err
 	}
-	_, err = io.Copy(f, http.MaxBytesReader(w, r.Body, 40<<20))
+	_, err = io.Copy(f, body)
 	f.Close()
 	if err != nil {
-		fail(w, 413, "That file is too large (40 MB limit).")
-		return
+		return nil, engineError("That file is too large (40 MB limit).")
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	args := append([]string{"--sandbox"}, c.args...)
 	cmd := exec.CommandContext(ctx, env("OS_PANDOC", "pandoc"), append(args, "-o", out, in)...)
@@ -69,10 +78,7 @@ func (s *Server) handleConvert(w http.ResponseWriter, r *http.Request, u *User) 
 		if len(msg) > 300 {
 			msg = msg[:300]
 		}
-		fail(w, 422, "That file couldn't be converted. "+string(msg))
-		return
+		return nil, engineError("That file couldn't be converted. " + string(msg))
 	}
-	w.Header().Set("Content-Type", c.mime)
-	w.Header().Set("Cache-Control", "no-store")
-	http.ServeFile(w, r, out)
+	return os.ReadFile(out)
 }

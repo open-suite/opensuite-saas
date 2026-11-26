@@ -326,7 +326,9 @@ func (s *Server) routesFiles(m *http.ServeMux) {
 
 func (s *Server) handleFileList(w http.ResponseWriter, r *http.Request, u *User) {
 	nodes := s.fileList(u)
-	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Updated > nodes[j].Updated || (nodes[i].Updated == nodes[j].Updated && nodes[i].ID < nodes[j].ID) })
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].Updated > nodes[j].Updated || (nodes[i].Updated == nodes[j].Updated && nodes[i].ID < nodes[j].ID)
+	})
 	if len(nodes) > maxNodes {
 		nodes = nodes[:maxNodes]
 	}
@@ -669,7 +671,7 @@ var inlineTypes = map[string]string{
 	"video/mp4": "video/mp4", "video/webm": "video/webm", "video/ogg": "video/ogg", "video/quicktime": "video/quicktime",
 	"audio/mpeg": "audio/mpeg", "audio/mp4": "audio/mp4", "audio/ogg": "audio/ogg", "audio/wav": "audio/wav",
 	"audio/x-wav": "audio/wav", "audio/webm": "audio/webm", "audio/flac": "audio/flac", "audio/aac": "audio/aac",
-	"audio/x-m4a": "audio/mp4",
+	"audio/x-m4a":     "audio/mp4",
 	"application/pdf": "application/pdf",
 }
 
@@ -721,7 +723,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, n *Node) {
 func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request, u *User) {
 	role, n, _ := s.nodeRole(u, r.PathValue("id"))
 	if n == nil || role == "" || n.Kind != "file" {
-		http.NotFound(w, r)
+		fail(w, 404, "That file doesn't exist.")
 		return
 	}
 	s.serveFile(w, r, n)
@@ -849,19 +851,23 @@ func (s *Server) handleFileFromMail(w http.ResponseWriter, r *http.Request, u *U
 		fail(w, 400, "bad request")
 		return
 	}
+	s.copyFromMail(w, r, u, in.BlobID, in.ID, in.Name, in.Type, in.Parent)
+}
+
+func (s *Server) copyFromMail(w http.ResponseWriter, r *http.Request, u *User, blobID, id, name, ctype, parent string) {
 	if !u.MailReady || s.cfg.MailURL == "" {
 		fail(w, 503, "Your mailbox is being set up.")
 		return
 	}
-	if code, msg := s.placeIn(u, in.Parent); code != 0 {
+	if code, msg := s.placeIn(u, parent); code != 0 {
 		fail(w, code, msg)
 		return
 	}
-	name := cleanName(in.Name)
-	if in.Type == "" {
-		in.Type = "application/octet-stream"
+	name = cleanName(name)
+	if ctype == "" {
+		ctype = "application/octet-stream"
 	}
-	path := "/jmap/download/" + url.PathEscape(u.MailID) + "/" + url.PathEscape(in.BlobID) + "/" + url.PathEscape(name) + "?accept=" + url.QueryEscape(in.Type)
+	path := "/jmap/download/" + url.PathEscape(u.MailID) + "/" + url.PathEscape(blobID) + "/" + url.PathEscape(name) + "?accept=" + url.QueryEscape(ctype)
 	req, err := http.NewRequestWithContext(r.Context(), "GET", s.cfg.MailURL+path, nil)
 	if err != nil {
 		fail(w, 500, "mail error")
@@ -887,7 +893,7 @@ func (s *Server) handleFileFromMail(w http.ResponseWriter, r *http.Request, u *U
 		return
 	}
 	defer s.release(u.OrgID, hold)
-	n, code, msg := s.storeFile(u, in.ID, in.Parent, name, in.Type, res.Body, hold)
+	n, code, msg := s.storeFile(u, id, parent, name, ctype, res.Body, hold)
 	if code != 0 {
 		fail(w, code, msg)
 		return
@@ -898,31 +904,35 @@ func (s *Server) handleFileFromMail(w http.ResponseWriter, r *http.Request, u *U
 // handleFileToMail hands a file to the mail engine as an attachment for the
 // message the caller is writing.
 func (s *Server) handleFileToMail(w http.ResponseWriter, r *http.Request, u *User) {
-	role, n, _ := s.nodeRole(u, r.PathValue("id"))
-	if n == nil || role == "" || n.Kind != "file" {
-		fail(w, 404, "That file doesn't exist.")
+	p, code, msg := s.fileToMail(r.Context(), u, r.PathValue("id"))
+	if code != 0 {
+		fail(w, code, msg)
 		return
+	}
+	ok(w, map[string]any{"blobId": p.BlobID, "type": p.Type, "name": p.Name, "size": p.Size})
+}
+
+func (s *Server) fileToMail(ctx context.Context, u *User, id string) (*jmapPart, int, string) {
+	role, n, _ := s.nodeRole(u, id)
+	if n == nil || role == "" || n.Kind != "file" {
+		return nil, 404, "That file doesn't exist."
 	}
 	if !u.MailReady || s.cfg.MailURL == "" {
-		fail(w, 503, "Your mailbox is being set up.")
-		return
+		return nil, 503, "Your mailbox is being set up."
 	}
 	if n.Size > maxMailCopy {
-		fail(w, 413, "That file is too large to attach (50 MB limit). Share a link to it instead.")
-		return
+		return nil, 413, "That file is too large to attach (50 MB limit). Share a link to it instead."
 	}
 	f, err := os.Open(s.filePath(n.ID))
 	if err != nil {
-		fail(w, 404, "That file doesn't exist.")
-		return
+		return nil, 404, "That file doesn't exist."
 	}
 	defer f.Close()
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", s.cfg.MailURL+"/jmap/upload/"+url.PathEscape(u.MailID)+"/", f)
 	if err != nil {
-		fail(w, 500, "mail error")
-		return
+		return nil, 500, "mail error"
 	}
 	req.ContentLength = n.Size
 	req.SetBasicAuth(u.Email, u.MailSecret)
@@ -933,18 +943,16 @@ func (s *Server) handleFileToMail(w http.ResponseWriter, r *http.Request, u *Use
 	req.Header.Set("Content-Type", ctype)
 	res, err := mailClient.Do(req)
 	if err != nil {
-		fail(w, 502, "The mail service is not responding.")
-		return
+		return nil, 502, "The mail service is not responding."
 	}
 	defer res.Body.Close()
 	var up struct {
 		BlobID string `json:"blobId"`
 	}
 	if res.StatusCode >= 300 || json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&up) != nil || up.BlobID == "" {
-		fail(w, 502, "The mail service refused that file.")
-		return
+		return nil, 502, "The mail service refused that file."
 	}
-	ok(w, map[string]any{"blobId": up.BlobID, "type": ctype, "name": n.Name, "size": n.Size})
+	return &jmapPart{BlobID: up.BlobID, Type: ctype, Name: n.Name, Size: n.Size}, 0, ""
 }
 
 // ensureColumn adds a column to a table created by an earlier version.

@@ -23,7 +23,7 @@ import {
   W, H, themes, themeIds, fonts, fontKey, layouts, layoutIds, tokenLabels, palette, fontSizes, roleStyle, resolve,
   isLine, isShape, outer, union, shifted, resized, snap, rotate,
 } from './slides-model.js'
-import { Deck, prewarm, uploadImage } from './slides-core.js'
+import { Deck, prewarm, uploadImage, imageData } from './slides-core.js'
 import { isBlank } from './slides-text.js'
 import { SlideView } from './slides-render.jsx'
 import { Show, Presenter } from './slides-show.jsx'
@@ -856,7 +856,7 @@ export default function SlidesView({ id }) {
   const exportPptx = async () => {
     try {
       const { deckToPptx } = await import('./slides-pptx.js')
-      download(await deckToPptx(deck.toJSON(), title), `${title || 'Untitled'}.pptx`)
+      download(await deckToPptx(deck.toJSON(), title, imageData), `${title || 'Untitled'}.pptx`)
     } catch (e) {
       toast(e.message, 'error')
     }

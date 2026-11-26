@@ -185,9 +185,13 @@ func (s *Server) handleFreeBusy(w http.ResponseWriter, r *http.Request, u *User)
 	out := map[string][]busyPeriod{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	for _, id := range in.People {
-		t := s.userByID(id)
-		if t == nil || t.OrgID != u.OrgID || t.Status != "active" || !t.MailReady || s.cfg.MailURL == "" {
+	for _, key := range in.People {
+		// The app names people by id; the API also by address.
+		var t *User
+		if p := s.personIn(u.OrgID, key); p != nil {
+			t = s.userByID(p.ID)
+		}
+		if t == nil || t.Status != "active" || !t.MailReady || s.cfg.MailURL == "" {
 			continue
 		}
 		wg.Add(1)

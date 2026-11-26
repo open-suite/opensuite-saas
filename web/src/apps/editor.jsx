@@ -7,15 +7,8 @@ import { IndexeddbPersistence } from 'y-indexeddb'
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness'
 import * as decoding from 'lib0/decoding'
 import { Editor } from '@tiptap/core'
-import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
-import TextAlign from '@tiptap/extension-text-align'
-import Image from '@tiptap/extension-image'
-import Highlight from '@tiptap/extension-highlight'
-import { TextStyle, Color } from '@tiptap/extension-text-style'
-import { TaskList, TaskItem } from '@tiptap/extension-list'
-import { TableKit } from '@tiptap/extension-table'
 import { Placeholder, CharacterCount } from '@tiptap/extensions'
 import { yXmlFragmentToProseMirrorRootNode, yUndoPluginKey } from '@tiptap/y-tiptap'
 import {
@@ -32,7 +25,8 @@ import { findDoc, renameDoc, trashDoc, convert, whenCreated } from '../lib/docs.
 import { colorFor, cx, debounce, download, pickFile, newId } from '../lib/util.js'
 import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkColors, markColors, keepFocus } from '../ui.jsx'
 import { ShareDialog } from './docs.jsx'
-import { Review as ReviewMarks, suggestKey, isSuggesting, setSuggesting } from './doc-marks.js'
+import { suggestKey, isSuggesting, setSuggesting } from './doc-marks.js'
+import { formatExtensions, docText, readingCopy } from './doc-format.js'
 import { adoptThreads } from './doc-comments.js'
 import { Review, ReviewStyle, reviewItems, reviewAtCaret, startThread, unmarkThread } from './doc-review.jsx'
 
@@ -63,21 +57,6 @@ function keepWarm(id, state) {
   warm.delete(id)
   warm.set(id, state)
   if (warm.size > 24) warm.delete(warm.keys().next().value)
-}
-
-// The document format itself: what a past version needs to be shown as well
-// as what the live editor needs.
-function formatExtensions(who) {
-  return [
-    StarterKit.configure({ undoRedo: false, link: { openOnClick: false, autolink: true } }),
-    TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    Image.configure({ allowBase64: true }),
-    Highlight.configure({ multicolor: true }),
-    TextStyle, Color,
-    TaskList, TaskItem.configure({ nested: true }),
-    TableKit.configure({ table: { resizable: true } }),
-    ReviewMarks.configure({ user: () => who }),
-  ]
 }
 
 function extensionsFor(ydoc, awareness, who) {
@@ -279,7 +258,7 @@ function openDocument(id, element, me, role, onChange) {
   // Search: the socket sends these words to the server's index (lib/sync.js).
   // Read from the document node, which outlives the editor: the last send
   // happens while this view is closing.
-  sock.text = () => editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n', ' ')
+  sock.text = () => docText(editor.state.doc)
 
   // A file chosen in "Import" becomes this document's first content.
   local.whenSynced.then(() => {
@@ -320,12 +299,9 @@ function openDocument(id, element, me, role, onChange) {
   }
 }
 
-// A downloaded copy reads as the document would with every suggestion
-// accepted, without the app's own markup for comments and suggestions.
+// A downloaded copy is the reading form with its pictures carried inside.
 async function inlineImages(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  for (const el of doc.querySelectorAll('del.sug-del')) el.remove()
-  for (const el of doc.querySelectorAll('ins.sug-ins, span.cmt, span.sug-fmt')) el.replaceWith(...el.childNodes)
+  const doc = readingCopy(html)
   for (const img of doc.querySelectorAll('img[src^="/api/blobs/"]')) {
     try {
       const blob = await (await fetch(img.getAttribute('src'))).blob()

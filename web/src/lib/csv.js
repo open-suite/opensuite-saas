@@ -1,6 +1,5 @@
-// Turning a .csv file into a spreadsheet. Loaded only when one is opened.
+// Turning a .csv file into a spreadsheet.
 import { Model } from '@ironcalc/wasm-xlsx'
-import { engine } from '../apps/sheet-core.js'
 
 // parseCsv reads comma- or semicolon-separated text with quoted fields.
 export function parseCsv(text) {
@@ -29,9 +28,15 @@ export function parseCsv(text) {
   return rows
 }
 
-// csvToSnapshot builds a workbook in the spreadsheet engine's own format.
-export async function csvToSnapshot(text, name) {
-  await engine()
+// toCsv writes rows of text as comma-separated values.
+export function toCsv(rows) {
+  const field = (v) => (/[",\r\n]|^\s|\s$/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v)
+  return rows.map((row) => row.map(field).join(',')).join('\r\n')
+}
+
+// csvSnapshot builds a workbook in the spreadsheet engine's own format. The
+// engine must already be loaded.
+export function csvSnapshot(text, name) {
   const m = new Model(name || 'Workbook', 'en', 'UTC', 'en')
   const rows = parseCsv(text)
   for (let r = 0; r < rows.length && r < 100000; r++) {

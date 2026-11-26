@@ -1,8 +1,23 @@
-import { useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
+import { signal } from '@preact/signals'
 import { boot, user, org, patchBoot, toast } from '../lib/store.js'
 import { post } from '../lib/api.js'
 import { Avatar, Button, Field } from '../ui.jsx'
 import { signOut } from '../lib/session.js'
+
+// Tokens, agents' tokens and the connect-an-app screen are their own chunk
+// (connect.jsx): fetched at idle after start, or when one of them is opened.
+const connect = signal(null)
+let loading = null
+export function loadConnect() {
+  loading ??= import('./connect.jsx').then((m) => (connect.value = m))
+  return loading
+}
+export function Connect({ view, fallback = null, ...props }) {
+  useEffect(() => { loadConnect() }, [])
+  const View = connect.value?.[view]
+  return View ? <View {...props} /> : fallback
+}
 
 export function Account() {
   const u = user.value
@@ -53,6 +68,7 @@ export function Account() {
           <Field label="New password" hint="At least 10 characters."><input class="input" type="password" autocomplete="new-password" minlength={10} value={pw.password} onInput={(e) => setPw({ ...pw, password: e.target.value })} required /></Field>
           <div><Button kind="primary" type="submit">Change password</Button></div>
         </form>
+        <Connect view="Tokens" />
         <Button kind="danger" onClick={signOut}>Sign out</Button>
       </div>
     </div>

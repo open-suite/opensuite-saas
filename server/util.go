@@ -127,10 +127,15 @@ func (l *limiter) allow(key string, max int, period time.Duration) bool {
 // guard applies the cross-site request rule for the whole API: a state
 // changing request must come from our own pages. Browsers always send Origin
 // on cross-site POSTs, so comparing it with Host is sufficient with a
-// SameSite=Lax cookie.
+// SameSite=Lax cookie. Requests that carry no cookie authority are exempt:
+// the public API with a Bearer token (a cookie is then ignored, see
+// apiCaller), and the MCP server and OAuth endpoints, which never read one.
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS" {
+		p := r.URL.Path
+		noCookie := (r.Header.Get("Authorization") != "" && strings.HasPrefix(p, "/api/v1/")) ||
+			p == "/mcp" || p == "/oauth/token" || p == "/oauth/register" || p == "/oauth/revoke"
+		if r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS" && !noCookie {
 			if o := r.Header.Get("Origin"); o != "" && !sameHost(o, r.Host) {
 				fail(w, 403, "cross-site request refused")
 				return

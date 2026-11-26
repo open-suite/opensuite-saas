@@ -13,9 +13,10 @@ import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkC
 import { ShareDialog } from './docs.jsx'
 import { Sheet, colName, prewarmSheets } from './sheet-core.js'
 import { toXlsx } from './sheet-charts.js'
+import { addSheet as appendSheet } from './sheet-data.js'
 import { ChartLayer, ChartPanel, insertChart, readCharts, removeChart } from './charts.jsx'
 
-export { xlsxToSnapshot } from './sheet-core.js'
+export { xlsxToSnapshot, csvToSnapshot } from './sheet-core.js'
 
 export const prewarm = () => prewarmSheets(docs.value.filter((d) => d.kind === 'sheet' && !d.trashed).slice(0, 8).map((d) => d.id))
 
@@ -223,14 +224,7 @@ export default function SheetView({ id }) {
     }
   }
   const addSheet = () => {
-    live.act((m) => {
-      m.newSheet()
-      // The engine numbers a new sheet by counting every sheet, hidden ones
-      // included; people count the tabs they can see.
-      const all = m.getWorksheetsProperties()
-      const name = 'Sheet' + all.filter((sh) => sh.state === 'visible').length
-      if (!all.some((sh) => sh.name === name)) m.renameSheet(all.length - 1, name)
-    })
+    live.act((m) => appendSheet(m))
     live.useSheet(live.sheets.length - 1)
   }
   const shown = sheets.map((sh, i) => (sh.state === 'visible' ? i : -1)).filter((i) => i >= 0)

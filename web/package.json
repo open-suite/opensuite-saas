@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build && vite build --config vite.headless.config.js",
+    "check-headless": "node scripts/check-headless.mjs"
   },
   "dependencies": {
     "@ironcalc/wasm-xlsx": "^0.9.1",
@@ -36,6 +37,8 @@
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
+    "happy-dom": "^21.0.4",
+    "linkedom": "^0.18.15",
     "vite": "^8.3.8"
   }
 }

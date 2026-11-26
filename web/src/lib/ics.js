@@ -73,13 +73,13 @@ function timezoneBlock(tz, year) {
   return lines
 }
 
-function rruleText(rule, ev) {
+function rruleText(rule, ev, zone) {
   const parts = ['FREQ=' + rule.frequency.toUpperCase()]
   if (rule.interval > 1) parts.push('INTERVAL=' + rule.interval)
   if (rule.count) parts.push('COUNT=' + rule.count)
   else if (rule.until) {
     const wall = parseWall(rule.until)
-    parts.push('UNTIL=' + (ev.showWithoutTime ? compact(wall).slice(0, 8) : utcStamp(instantOf(wall, ev.timeZone || localZone))))
+    parts.push('UNTIL=' + (ev.showWithoutTime ? compact(wall).slice(0, 8) : utcStamp(instantOf(wall, ev.timeZone || zone))))
   }
   if (rule.byDay?.length) parts.push('BYDAY=' + rule.byDay.map((b) => (b.nthOfPeriod || '') + b.day.toUpperCase()).join(','))
   if (rule.byMonthDay?.length) parts.push('BYMONTHDAY=' + rule.byMonthDay.join(','))
@@ -90,20 +90,21 @@ function rruleText(rule, ev) {
 const mailOf = (addr = '') => addr.replace(/^mailto:/i, '').toLowerCase()
 export const addressOf = (p) => mailOf(p?.calendarAddress || p?.sendTo?.imip || '')
 
-// when writes a date property in the form the event uses.
-function when(name, wallText, ev) {
+// when writes a date property in the form the event uses; a time without a
+// zone of its own is read in `zone`.
+function when(name, wallText, ev, zone) {
   const wall = parseWall(wallText)
   if (ev.showWithoutTime) return `${name};VALUE=DATE:${compact(wall).slice(0, 8)}`
   if (ev.timeZone) return `${name};TZID=${ev.timeZone}:${compact(wall)}`
-  return `${name}:${utcStamp(instantOf(wall, localZone))}`
+  return `${name}:${utcStamp(instantOf(wall, zone))}`
 }
 
-function eventLines(ev, { method, sequence, only, recurrenceId, master }) {
+function eventLines(ev, { method, sequence, only, recurrenceId, master, zone }) {
   const startWall = parseWall(ev.start)
   const endWall = startWall + (parseDuration(ev.duration) || (ev.showWithoutTime ? DAY : 0))
   const l = ['BEGIN:VEVENT', 'UID:' + ev.uid, 'DTSTAMP:' + utcStamp(Date.now()), 'SEQUENCE:' + (sequence ?? ev.sequence ?? 0)]
-  if (recurrenceId) l.push(when('RECURRENCE-ID', recurrenceId, master))
-  l.push(when('DTSTART', ev.start, ev), when('DTEND', formatWall(endWall), ev))
+  if (recurrenceId) l.push(when('RECURRENCE-ID', recurrenceId, master, zone))
+  l.push(when('DTSTART', ev.start, ev, zone), when('DTEND', formatWall(endWall), ev, zone))
   l.push('SUMMARY:' + esc(ev.title || '(no title)'))
   const place = Object.values(ev.locations || {})[0]?.name
   const link = Object.values(ev.virtualLocations || {})[0]?.uri
@@ -113,8 +114,8 @@ function eventLines(ev, { method, sequence, only, recurrenceId, master }) {
     if (place || link) l.push('LOCATION:' + esc(place || link))
     if (link) l.push('URL:' + link, 'CONFERENCE;VALUE=URI;FEATURE=VIDEO;LABEL="Open Suite meeting":' + link)
     if (ev.recurrenceRule && !recurrenceId) {
-      l.push('RRULE:' + rruleText(ev.recurrenceRule, ev))
-      for (const [rid, patch] of Object.entries(ev.recurrenceOverrides || {})) if (patch?.excluded) l.push(when('EXDATE', rid, ev))
+      l.push('RRULE:' + rruleText(ev.recurrenceRule, ev, zone))
+      for (const [rid, patch] of Object.entries(ev.recurrenceOverrides || {})) if (patch?.excluded) l.push(when('EXDATE', rid, ev, zone))
     }
     l.push('STATUS:' + (method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED'), 'TRANSP:OPAQUE')
   }
@@ -134,15 +135,16 @@ function eventLines(ev, { method, sequence, only, recurrenceId, master }) {
 
 // toICS writes the calendar object for one event and one purpose.
 //   method: REQUEST (invite or update), CANCEL, REPLY (only = my address)
-export function toICS(ev, { method, sequence, only } = {}) {
+//   zone: where a time without a zone of its own is read (the viewer's)
+export function toICS(ev, { method, sequence, only, zone = localZone } = {}) {
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Open Suite//Calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:' + method]
   if (ev.timeZone && !ev.showWithoutTime) lines.push(...timezoneBlock(ev.timeZone, new Date(parseWall(ev.start)).getUTCFullYear()))
-  lines.push(...eventLines(ev, { method, sequence, only }))
+  lines.push(...eventLines(ev, { method, sequence, only, zone }))
   if (method === 'REQUEST') {
     for (const [rid, patch] of Object.entries(ev.recurrenceOverrides || {})) {
       if (!patch || patch.excluded) continue
       const one = applyPatch({ ...ev, start: rid, recurrenceRule: undefined, recurrenceOverrides: undefined }, patch)
-      lines.push(...eventLines(one, { method, sequence, recurrenceId: rid, master: ev }))
+      lines.push(...eventLines(one, { method, sequence, recurrenceId: rid, master: ev, zone }))
     }
   }
   lines.push('END:VCALENDAR')

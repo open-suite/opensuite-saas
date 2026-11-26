@@ -141,34 +141,51 @@ func (s *Server) handleDocCreate(w http.ResponseWriter, r *http.Request, u *User
 		fail(w, 400, "bad request")
 		return
 	}
-	if code, msg := s.placeIn(u, in.Folder); code != 0 {
-		fail(w, code, msg)
-		return
-	}
-	// The client may mint the id so a new document opens before the server
-	// has answered.
-	id := in.ID
-	if len(id) != 14 || strings.Trim(id, idAlphabet) != "" {
-		id = newID(14)
-	}
 	var snap []byte
-	var seq int64
 	if in.Snapshot != "" {
 		b, err := base64.StdEncoding.DecodeString(in.Snapshot)
 		if err != nil {
 			fail(w, 400, "bad snapshot")
 			return
 		}
-		snap, seq = b, 1
+		snap = b
+	}
+	d, code, msg := s.createDoc(u, in.ID, in.Kind, in.Title, in.Folder, snap)
+	if code != 0 {
+		fail(w, code, msg)
+		return
+	}
+	ok(w, d)
+}
+
+// createDoc files a new document, optionally starting from a snapshot. The
+// app may mint the id so a new document opens before the server has
+// answered; otherwise one is made here.
+func (s *Server) createDoc(u *User, id, kind, title, folder string, snap []byte) (*Doc, int, string) {
+	if !docKinds[kind] {
+		return nil, 400, "bad request"
+	}
+	if code, msg := s.placeIn(u, folder); code != 0 {
+		return nil, code, msg
+	}
+	if len(id) != 14 || strings.Trim(id, idAlphabet) != "" {
+		id = newID(14)
+	}
+	var seq int64
+	if len(snap) > 0 {
+		seq = 1
+	}
+	title = strings.TrimSpace(title)
+	if len(title) > 200 {
+		title = title[:200]
 	}
 	t := now()
 	_, err := s.w.Exec(`INSERT INTO docs(id, org_id, owner_id, kind, title, folder_id, created, updated, snap, snap_seq, seq) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		id, u.OrgID, u.ID, in.Kind, strings.TrimSpace(in.Title), in.Folder, t, t, snap, seq, seq)
+		id, u.OrgID, u.ID, kind, title, folder, t, t, snap, seq, seq)
 	if err != nil {
-		fail(w, 409, "That document already exists.")
-		return
+		return nil, 409, "That document already exists."
 	}
-	ok(w, Doc{ID: id, Kind: in.Kind, Title: in.Title, Folder: in.Folder, Access: "private", Owner: u.ID, Role: "owner", Created: t, Updated: t, Shares: []Share{}})
+	return &Doc{ID: id, Kind: kind, Title: title, Folder: folder, Access: "private", Owner: u.ID, Role: "owner", Created: t, Updated: t, Shares: []Share{}}, 0, ""
 }
 
 func (s *Server) handleDocUpdate(w http.ResponseWriter, r *http.Request, u *User) {
@@ -460,7 +477,7 @@ func (s *Server) handleDocSync(w http.ResponseWriter, r *http.Request, u *User) 
 		switch msg[0] {
 		case msgUpdate:
 			if p.edit && len(msg) > 9 {
-				s.applyUpdate(rm, p, msg[1:])
+				s.applyUpdate(rm, p, p.user, msg[1:])
 			}
 		case msgAwareness:
 			out := append(varint([]byte{msgAwareness}, p.id), msg[1:]...)
@@ -527,13 +544,18 @@ func (s *Server) handleDocState(w http.ResponseWriter, r *http.Request, u *User)
 	w.Write(out)
 }
 
-func (s *Server) applyUpdate(rm *room, from *peer, payload []byte) {
+// applyUpdate stores one update from a member and sends it to everyone in
+// the room. from is the connection it came on, or nil when the API wrote it
+// on the member's behalf (content.go); then everyone receives it as news.
+func (s *Server) applyUpdate(rm *room, from *peer, user string, payload []byte) {
 	var op [8]byte
 	copy(op[:], payload)
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 	if seq, dup := rm.recent[op]; dup {
-		from.send(append(varint([]byte{msgAck}, uint64(seq)), op[:]...))
+		if from != nil {
+			from.send(append(varint([]byte{msgAck}, uint64(seq)), op[:]...))
+		}
 		return
 	}
 	t := now()
@@ -553,7 +575,7 @@ func (s *Server) applyUpdate(rm *room, from *peer, payload []byte) {
 	}
 	rm.seq = seq
 	rm.updated = t
-	s.noteEditor(rm, from.user, t)
+	s.noteEditor(rm, user, t)
 	rm.recent[op] = seq
 	rm.order = append(rm.order, op)
 	if len(rm.order) > 4096 {
