@@ -49,9 +49,9 @@ export function PageSetup({ ydoc, title, onClose, readOnly }) {
       </div>
       {!readOnly && (
         <div class="ps-tokens">
-          <button type="button" class="chip" onClick={() => token(ref, key, '{page}')}>+ Page number</button>
-          <button type="button" class="chip" onClick={() => token(ref, key, '{pages}')}>+ Page count</button>
-          <button type="button" class="chip" onClick={() => token(ref, key, '{title}')}>+ Title</button>
+          <button type="button" class="ps-chip" onClick={() => token(ref, key, '{page}')}>+ Page number</button>
+          <button type="button" class="ps-chip" onClick={() => token(ref, key, '{pages}')}>+ Page count</button>
+          <button type="button" class="ps-chip" onClick={() => token(ref, key, '{title}')}>+ Title</button>
         </div>
       )}
     </Field>
@@ -70,9 +70,9 @@ export function PageSetup({ ydoc, title, onClose, readOnly }) {
           </select>
         </Field>
         <Field label="Orientation">
-          <div class="seg" role="radiogroup" aria-label="Orientation">
+          <div class="ps-seg" role="radiogroup" aria-label="Orientation">
             {['portrait', 'landscape'].map((o) => (
-              <button key={o} type="button" role="radio" aria-checked={p.orientation === o} class={cx('seg-btn', p.orientation === o && 'on')} disabled={readOnly} onClick={() => set('orientation', o)}>
+              <button key={o} type="button" role="radio" aria-checked={p.orientation === o} class={cx('ps-seg-btn', p.orientation === o && 'on')} disabled={readOnly} onClick={() => set('orientation', o)}>
                 {o === 'portrait' ? 'Portrait' : 'Landscape'}
               </button>
             ))}
@@ -107,7 +107,7 @@ export function WordCount({ editor, onClose, show, onShow }) {
           {row('Characters excluding spaces', 'charactersNoSpaces')}
         </tbody>
       </table>
-      <label class="check"><input type="checkbox" checked={show} onChange={(e) => onShow(e.target.checked)} /> Show word count while typing</label>
+      <label class="ps-check"><input type="checkbox" checked={show} onChange={(e) => onShow(e.target.checked)} /> Show word count while typing</label>
     </Modal>
   )
 }
@@ -173,7 +173,7 @@ export function FindBar({ editor, replace: withReplace, canReplace, onClose, tic
             toast(n === 1 ? 'Replaced 1 match' : `Replaced ${n} matches`)
           }}>Replace all</Button>
         </div>
-      ) : <button type="button" class="link-btn find-more" onClick={() => setShowReplace(true)}>Replace…</button>)}
+      ) : <button type="button" class="find-link find-more" onClick={() => setShowReplace(true)}>Replace…</button>)}
     </div>
   )
 }
@@ -241,8 +241,12 @@ function footIndex(doc, pos) {
 
 // The bar over a selected picture: its layout and size.
 export function PictureBar({ editor, picture, box, onLayout }) {
-  const place = box && placeAt(editor, picture.pos, box)
-  if (!place) return null
+  const el = editor.view.nodeDOM(picture.pos)
+  if (!box || !el?.getBoundingClientRect) return null
+  const r = el.getBoundingClientRect()
+  const b = box.getBoundingClientRect()
+  // Above the picture, or inside its top edge when it starts at the top.
+  const place = { top: Math.max(4 + 54, r.top - b.top), left: Math.max(8, Math.min(r.left - b.left, b.width - 420)) }
   const layout = picture.inline ? 'inline' : picture.wrap
   const opt = (value, label) => <option value={value}>{label}</option>
   return (

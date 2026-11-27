@@ -24,7 +24,7 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true })
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
 
 const cell = (col, row) => ({ x: 46 + 90 * col - 45, y: 24 + 25 * row - 12 }) // centre of a default-size cell
-const live = '.doc-scroll > div:first-child .paper' // the live document, not a past version shown beside it
+const live = '.doc-live .paper' // the live document, not a past version shown beside it
 
 async function shot(page, name, { dark = true, phone = true } = {}) {
   if (!SHOTS) return
@@ -328,7 +328,7 @@ const painted = (sel) => { const el = document.querySelector(sel); return !!el &
       await newDoc('Board paper', ['Version one of the paper.'])
       await B.goto(A.url())
       await B.waitForFunction((live) => document.querySelector(live)?.textContent.includes('Version one'), live)
-      await A.click('.doc-bar [aria-label="More"]')
+      await A.click('.menubar >> text=File')
       await A.click('.menu >> text=Version history')
       await A.waitForSelector('.versions')
       await A.click('.versions >> text=Name this version')
@@ -342,7 +342,7 @@ const painted = (sel) => { const el = document.querySelector(sel); return !!el &
       await A.waitForFunction(() => document.querySelector('.save-state')?.textContent === 'Saved')
       await A.click('.ver-row >> text=Sent to the board')
       await A.waitForSelector('.version-bar')
-      const past = await A.$eval('.doc-scroll > div:nth-child(2) .paper', (el) => el.textContent)
+      const past = await A.$eval('.doc-past .paper', (el) => el.textContent)
       if (past !== 'Version one of the paper.') throw new Error('preview shows: ' + past)
       ok('history: a past version can be read without changing the document')
       await shot(A, 'history-document')

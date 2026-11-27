@@ -165,7 +165,7 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
     report('open the comments rail', rail)
     const history = []
     for (let i = 0; i < 7; i++) {
-      await page.click('.doc-bar [aria-label="More"]')
+      await page.click('.menubar >> text=File')
       history.push(await page.evaluate(async () => {
         const item = [...document.querySelectorAll('.menu .menu-item')].find((el) => el.textContent.includes('Version history'))
         const t = performance.now()

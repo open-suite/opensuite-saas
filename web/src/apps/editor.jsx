@@ -745,8 +745,8 @@ export default function EditorView({ id }) {
         <div class="doc-main" ref={main}>
           <div class={cx('doc-scroll', mode === 'view' && 'clean')} onMouseDown={(e) => e.target === e.currentTarget && !past && editor?.commands.focus('end')}>
             <Page page={shownPage} title={title}>
-              <div ref={host} style={past ? { display: 'none' } : undefined} />
-              <div ref={pastHost} />
+              <div class="doc-live" ref={host} style={past ? { display: 'none' } : undefined} />
+              <div class="doc-past" ref={pastHost} />
             </Page>
           </div>
           {editor && !past && showCount && <button type="button" class="doc-foot" onClick={() => setDialog('count')}>{editor.storage.characterCount.words()} words</button>}
