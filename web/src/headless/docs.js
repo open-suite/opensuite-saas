@@ -6,9 +6,11 @@ import { getSchema, createDocument, getHTMLFromFragment } from '@tiptap/core'
 import { Fragment } from '@tiptap/pm/model'
 import { Transform } from '@tiptap/pm/transform'
 import { initProseMirrorDoc, updateYFragment } from '@tiptap/y-tiptap'
-import { formatExtensions, docText, readingCopy } from '../apps/doc-format.js'
+import { formatExtensions, docText, readingCopy, exportCopy, importCopy } from '../apps/doc-format.js'
 import { commentRanges } from '../apps/doc-marks.js'
 import { readThreads, addThread, addReply, setResolved, adoptThreads } from '../apps/doc-comments.js'
+import { readPage, setPage, adoptPage, pageFromHTML } from '../apps/doc-page.js'
+import { findMatches, replaceMatches, counts } from '../apps/doc-find.js'
 import { newId } from '../lib/util.js'
 import { arg, oneOf, person, frames, openY, change } from './wire.js'
 import { reuse } from './reuse.js'
@@ -127,22 +129,70 @@ function threadOf(ydoc, args) {
 }
 
 export const docOps = {
-  'doc.read': (args) => open(frames(args), ({ doc }) => ({
-    html: readingCopy(getHTMLFromFragment(doc.content, schema)).body.innerHTML,
-    text: docText(doc),
-  })),
+  // With export, the HTML a file is made from (doc-format.js exportCopy).
+  'doc.read': (args) => {
+    const ex = arg(args, 'export', 'object', true)
+    return open(frames(args), ({ ydoc, doc }) => {
+      const raw = getHTMLFromFragment(doc.content, schema)
+      const text = docText(settled(doc))
+      return {
+        html: ex
+          ? exportCopy(raw, { page: readPage(ydoc), title: typeof ex.title === 'string' ? ex.title : 'Untitled', target: ['word', 'html', 'markdown'].includes(ex.target) ? ex.target : 'word' })
+          : readingCopy(raw).body.innerHTML,
+        text: docText(doc),
+        page: readPage(ydoc),
+        ...counts(text),
+      }
+    })
+  },
 
+  // A page setup in the HTML (a converted file's <meta>) comes with it.
   'doc.write': (args) => {
     const html = arg(args, 'html', 'string')
     const mode = oneOf(args, 'mode', ['replace', 'append', 'prepend'])
     return open(frames(args), ({ ydoc, frag, doc, meta }) => {
-      const input = unmarked(createDocument(html, schema))
+      const input = unmarked(createDocument(importCopy(html), schema))
+      const page = mode === 'replace' ? pageFromHTML(html) : null
       if (mode !== 'replace' && blank(input)) return { update: '', text: docText(doc) }
       const content = mode === 'replace' ? reuse(doc, input, readingKey, keepComments)
         : blank(doc) ? input.content
           : mode === 'append' ? doc.content.append(input.content) : input.content.append(doc.content)
       const next = schema.topNodeType.create(null, content)
-      return { update: change(ydoc, () => updateYFragment(ydoc, frag, next, meta)), text: docText(next) }
+      return {
+        update: change(ydoc, () => {
+          updateYFragment(ydoc, frag, next, meta)
+          if (page) setPage(ydoc, page)
+        }),
+        text: docText(next),
+      }
+    })
+  },
+
+  'doc.page': (args) => open(frames(args), ({ ydoc }) => ({ page: readPage(ydoc) })),
+
+  'doc.setPage': (args) => {
+    const page = arg(args, 'page', 'object')
+    return open(frames(args), ({ ydoc }) => {
+      let after
+      const update = change(ydoc, () => {
+        after = setPage(ydoc, page)
+      })
+      return { update, page: after }
+    })
+  },
+
+  // Find and replace, as Edit > Find and replace does it.
+  'doc.replace': (args) => {
+    const find = arg(args, 'find', 'string')
+    const replace = arg(args, 'replace', 'string')
+    const matchCase = arg(args, 'matchCase', 'boolean', true) ?? false
+    const wholeWord = arg(args, 'wholeWord', 'boolean', true) ?? false
+    if (!find) throw new Error('find must not be empty')
+    return open(frames(args), ({ ydoc, frag, doc, meta }) => {
+      const matches = findMatches(doc, find, { matchCase, wholeWord })
+      if (!matches.length) return { update: '', text: docText(doc), replaced: 0 }
+      const tr = replaceMatches(new Transform(doc), matches, replace)
+      return { update: change(ydoc, () => updateYFragment(ydoc, frag, tr.doc, meta)), text: docText(tr.doc), replaced: matches.length }
     })
   },
 
@@ -204,6 +254,7 @@ export const docOps = {
         const next = schema.topNodeType.create(null, reuse(doc, past, exactKey))
         const update = change(ydoc, () => {
           adoptThreads(ydoc, version)
+          adoptPage(ydoc, version)
           updateYFragment(ydoc, frag, next, meta)
         })
         return { update, text: docText(next) }

@@ -182,11 +182,7 @@ func (s *Server) stateOf(w http.ResponseWriter, id string) (engineState, bool) {
 
 // pandoc converts with the same sandboxed tool as /api/convert.
 func (s *Server) pandoc(ctx context.Context, from, to string, in []byte) ([]byte, error) {
-	c, found := conversions[from+">"+to]
-	if !found {
-		return nil, engineError("That conversion isn't supported.")
-	}
-	return runPandoc(ctx, c, from, bytes.NewReader(in))
+	return convertFile(ctx, from, to, in)
 }
 
 func textHTML(text string) string {
@@ -305,6 +301,18 @@ func (s *Server) contentOps() []*apiOp {
 		"allSheets":   boolean("replace: every sheet, not just this one."),
 		"deleteSheet": boolean("removePivot: also delete the pivot table's sheet (default true)."),
 	}, "op")
+	pageSchema := object(js{
+		"size":        enum("Paper. Default a4.", "a4", "letter", "legal", "a5", "a3"),
+		"orientation": enum("Default portrait.", "portrait", "landscape"),
+		"top":         number("Top margin in millimetres (0 to 100). Default 25.4."),
+		"right":       number("Right margin in millimetres."),
+		"bottom":      number("Bottom margin in millimetres."),
+		"left":        number("Left margin in millimetres."),
+		"header":      str("Text at the top of every page; {page}, {pages} and {title} are filled in. Empty for none."),
+		"headerAlign": enum("", "left", "center", "right"),
+		"footer":      str("Text at the foot of every page, as header."),
+		"footerAlign": enum("", "left", "center", "right"),
+	})
 	return []*apiOp{
 		{Method: "POST", Path: "/api/v1/documents", ID: "create_document", Tag: "Documents", Summary: "Create a document, spreadsheet or presentation", Write: true,
 			Desc: "Optionally with first content: text for a document (markdown by default), CSV for a spreadsheet, slide operations for a presentation (as edit_slides).",
@@ -326,11 +334,15 @@ func (s *Server) contentOps() []*apiOp {
 			Params: []apiParam{id, query("format", enum("File format.", "docx", "odt", "md", "html", "txt", "xlsx", "csv", "pptx")), query("sheet", str("For csv: the sheet's name or 0-based index."))},
 			File:   true, H: s.handleExport},
 		{Method: "GET", Path: "/api/v1/documents/{id}/text", ID: "read_document", Tag: "Document content", Summary: "Read a text document",
-			Desc:   "As it would read with every suggested change accepted, without comment markings.",
+			Desc:   "As it would read with every suggested change accepted, without comment markings, with its word and character counts. In html, formatting is as write_document takes it.",
 			Params: []apiParam{id, query("format", enum("Default markdown.", "markdown", "html", "text"))},
-			Result: object(js{"format": str(""), "content": str("")}, "content"), H: s.handleReadText},
+			Result: object(js{"format": str(""), "content": str(""), "words": integer(""), "characters": integer(""), "charactersNoSpaces": integer("")}, "content"), H: s.handleReadText},
 		{Method: "PUT", Path: "/api/v1/documents/{id}/text", ID: "write_document", Tag: "Document content", Summary: "Write a text document", Write: true,
-			Desc:   "Replace the whole text, or add to the start or end. Merges with anyone editing at the same time: paragraphs that do not change are kept as they are, with their comments.",
+			Desc: "Replace the whole text, or add to the start or end. Merges with anyone editing at the same time: paragraphs that do not change are kept as they are, with their comments. " +
+				"In html: fonts, sizes, colours and highlight as <span style=\"font-family: Georgia; font-size: 14pt; color: #c0392b\"> and <mark data-color=\"#fff3a3\">; " +
+				"line spacing and indents as <p style=\"line-height: 1.5\" data-indent=\"1\">; alignment as text-align; a page break as <div data-page-break></div>; " +
+				"a table of contents, kept up to date from the headings, as <nav data-toc></nav>; a footnote as <sup data-footnote=\"The note's text.\"></sup> where its number goes; " +
+				"pictures as <img src> with width (\"50%\" or pixels), data-wrap (break, left or right: text flows round it) and data-align (left, center, right), or data-inline to sit in a line of text.",
 			Params: []apiParam{id},
 			Body: object(js{
 				"content": str(""),
@@ -338,6 +350,21 @@ func (s *Server) contentOps() []*apiOp {
 				"mode":    enum("Default replace.", "replace", "append", "prepend"),
 			}, "content"),
 			Result: okResult, H: s.handleWriteText},
+		{Method: "POST", Path: "/api/v1/documents/{id}/replace", ID: "find_replace", Tag: "Document content", Summary: "Find and replace text", Write: true,
+			Desc:   "Replaces every match, keeping the formatting of the text it replaces. Matches are found within paragraphs, across changes of formatting, and not in text suggested for removal.",
+			Params: []apiParam{id},
+			Body: object(js{
+				"find":      str("Text to find."),
+				"replace":   str("Text to put instead; empty removes the matches."),
+				"matchCase": boolean("Only where capitals match. Default false."),
+				"wholeWord": boolean("Only whole words. Default false."),
+			}, "find", "replace"),
+			Result: object(js{"replaced": integer("How many matches were replaced.")}), H: s.handleReplace},
+		{Method: "GET", Path: "/api/v1/documents/{id}/page", ID: "read_page_setup", Tag: "Document content", Summary: "Read a document's page setup",
+			Desc: "Paper, orientation, margins (millimetres), and the header and footer.", Params: []apiParam{id}, Result: pageSchema, H: s.handleReadPage},
+		{Method: "PATCH", Path: "/api/v1/documents/{id}/page", ID: "update_page_setup", Tag: "Document content", Summary: "Change a document's page setup", Write: true,
+			Desc:   "Send only what changes. Header and footer text may hold {page}, {pages} and {title}.",
+			Params: []apiParam{id}, Body: pageSchema, Result: pageSchema, H: s.handleWritePage},
 		{Method: "GET", Path: "/api/v1/documents/{id}/comments", ID: "list_comments", Tag: "Document content", Summary: "List a document's comments",
 			Params: []apiParam{id}, Result: object(js{"items": array(commentSchema, "")}), H: s.handleComments},
 		{Method: "POST", Path: "/api/v1/documents/{id}/comments", ID: "add_comment", Tag: "Document content", Summary: "Comment on a passage", Write: true,
@@ -533,26 +560,46 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request, u *User) {
 // readText returns a text document in a format; inline puts pictures inside
 // (for files that leave the suite).
 func (s *Server) readText(w http.ResponseWriter, r *http.Request, u *User, st engineState, format string, inline bool) (string, bool) {
-	var res struct{ HTML, Text string }
-	if !s.content(w, r, u, "doc.read", map[string]any{"state": st}, &res) {
-		return "", false
+	text, _, done := s.readTextCounted(w, r, u, st, format, inline)
+	return text, done
+}
+
+// textCounts is Tools > Word count, for the document as it reads.
+type textCounts struct {
+	Words              int `json:"words"`
+	Characters         int `json:"characters"`
+	CharactersNoSpaces int `json:"charactersNoSpaces"`
+}
+
+func (s *Server) readTextCounted(w http.ResponseWriter, r *http.Request, u *User, st engineState, format string, inline bool) (string, textCounts, bool) {
+	args := map[string]any{"state": st}
+	if format == "" || format == "markdown" {
+		// Footnotes and the contents written out as Markdown has them.
+		args["export"] = map[string]any{"target": "markdown"}
+	}
+	var res struct {
+		HTML, Text string
+		textCounts
+	}
+	if !s.content(w, r, u, "doc.read", args, &res) {
+		return "", res.textCounts, false
 	}
 	switch format {
 	case "text":
-		return res.Text, true
+		return res.Text, res.textCounts, true
 	case "html":
-		return s.pictures(r, u, res.HTML, inline), true
+		return s.pictures(r, u, res.HTML, inline), res.textCounts, true
 	case "", "markdown":
 		out, err := s.pandoc(r.Context(), "html", "md", []byte(s.pictures(r, u, res.HTML, false)))
 		if err != nil {
 			log.Printf("export: %v", err)
 			fail(w, 500, "That document couldn't be converted.")
-			return "", false
+			return "", res.textCounts, false
 		}
-		return string(out), true
+		return string(out), res.textCounts, true
 	}
 	fail(w, 400, "format is markdown, html or text.")
-	return "", false
+	return "", res.textCounts, false
 }
 
 func (s *Server) handleReadText(w http.ResponseWriter, r *http.Request, u *User) {
@@ -564,12 +611,84 @@ func (s *Server) handleReadText(w http.ResponseWriter, r *http.Request, u *User)
 		return
 	}
 	format := r.URL.Query().Get("format")
-	if text, done := s.readText(w, r, u, st, format, false); done {
+	if text, n, done := s.readTextCounted(w, r, u, st, format, false); done {
 		if format == "" {
 			format = "markdown"
 		}
-		ok(w, map[string]string{"format": format, "content": text})
+		ok(w, map[string]any{"format": format, "content": text, "words": n.Words, "characters": n.Characters, "charactersNoSpaces": n.CharactersNoSpaces})
 	}
+}
+
+func (s *Server) handleReadPage(w http.ResponseWriter, r *http.Request, u *User) {
+	if _, allowed := s.contentDoc(w, r, u, "doc", "read"); !allowed {
+		return
+	}
+	st, found := s.stateOf(w, r.PathValue("id"))
+	if !found {
+		return
+	}
+	var res struct {
+		Page json.RawMessage `json:"page"`
+	}
+	if s.content(w, r, u, "doc.page", map[string]any{"state": st}, &res) {
+		ok(w, res.Page)
+	}
+}
+
+func (s *Server) handleWritePage(w http.ResponseWriter, r *http.Request, u *User) {
+	var in map[string]any
+	if readJSON(r, &in) != nil {
+		fail(w, 400, "bad request")
+		return
+	}
+	if _, allowed := s.contentDoc(w, r, u, "doc", "edit"); !allowed {
+		return
+	}
+	id := r.PathValue("id")
+	st, found := s.stateOf(w, id)
+	if !found {
+		return
+	}
+	var res struct {
+		Update string          `json:"update"`
+		Page   json.RawMessage `json:"page"`
+	}
+	if !s.content(w, r, u, "doc.setPage", map[string]any{"state": st, "page": in}, &res) {
+		return
+	}
+	s.writeUpdate(u, id, res.Update, nil)
+	ok(w, res.Page)
+}
+
+func (s *Server) handleReplace(w http.ResponseWriter, r *http.Request, u *User) {
+	var in struct {
+		Find, Replace        string
+		MatchCase, WholeWord bool
+	}
+	if readJSON(r, &in) != nil || in.Find == "" {
+		fail(w, 400, "Say what to find (find) and what to put instead (replace).")
+		return
+	}
+	if _, allowed := s.contentDoc(w, r, u, "doc", "edit"); !allowed {
+		return
+	}
+	id := r.PathValue("id")
+	st, found := s.stateOf(w, id)
+	if !found {
+		return
+	}
+	var res struct {
+		engineWrite
+		Replaced int `json:"replaced"`
+	}
+	if !s.content(w, r, u, "doc.replace", map[string]any{"state": st, "find": in.Find, "replace": in.Replace, "matchCase": in.MatchCase, "wholeWord": in.WholeWord,
+		"author": map[string]string{"id": u.ID, "name": u.Name}}, &res) {
+		return
+	}
+	if res.Replaced > 0 {
+		s.writeUpdate(u, id, res.Update, &res.Text)
+	}
+	ok(w, map[string]int{"replaced": res.Replaced})
 }
 
 func (s *Server) handleWriteText(w http.ResponseWriter, r *http.Request, u *User) {
@@ -901,11 +1020,17 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request, u *User) {
 	var out []byte
 	switch format {
 	case "docx", "odt", "html":
-		h, done := s.readText(w, r, u, st, "html", true)
-		if !done {
+		// The file's own form: footnotes numbered, the contents filled in,
+		// formatting named as styles and the page setup in a <meta>.
+		var res struct{ HTML string }
+		target := "word"
+		if format == "html" {
+			target = "html"
+		}
+		if !s.content(w, r, u, "doc.read", map[string]any{"state": st, "export": map[string]any{"title": title, "target": target}}, &res) {
 			return
 		}
-		h = "<!doctype html><html><head><meta charset=\"utf-8\"><title>" + html.EscapeString(title) + "</title></head><body>" + h + "</body></html>"
+		h := s.pictures(r, u, res.HTML, true)
 		if format == "html" {
 			out = []byte(h)
 			break

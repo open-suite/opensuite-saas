@@ -22,7 +22,9 @@ type conversion struct {
 }
 
 var conversions = map[string]conversion{
-	"docx>html": {[]string{"-f", "docx", "-t", "html", "--embed-resources"}, "html", "text/html; charset=utf-8"},
+	// +styles keeps the names of styles, which carry the editor's formatting
+	// (docexport.go).
+	"docx>html": {[]string{"-f", "docx+styles", "-t", "html", "--embed-resources"}, "html", "text/html; charset=utf-8"},
 	"odt>html":  {[]string{"-f", "odt", "-t", "html", "--embed-resources"}, "html", "text/html; charset=utf-8"},
 	"md>html":   {[]string{"-f", "gfm", "-t", "html"}, "html", "text/html; charset=utf-8"},
 	"html>docx": {[]string{"-f", "html", "-t", "docx"}, "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
@@ -41,7 +43,12 @@ func (s *Server) handleConvert(w http.ResponseWriter, r *http.Request, u *User) 
 		fail(w, 429, "Too many conversions. Try again in a minute.")
 		return
 	}
-	out, err := runPandoc(r.Context(), c, from, http.MaxBytesReader(w, r.Body, 40<<20))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 40<<20))
+	if err != nil {
+		fail(w, 413, "That file is too large (40 MB limit).")
+		return
+	}
+	out, err := convertFile(r.Context(), from, to, body)
 	if err != nil {
 		fail(w, 422, err.Error())
 		return
