@@ -72,6 +72,7 @@ async function selectRange(page, a, b) {
     // The menu bar: keyboard and search.
     await A.click('.grid-scroll', { position: cell(1, 1) })
     await A.keyboard.press('Alt+/')
+    await A.waitForSelector('input[aria-label="Search the menus"]', { timeout: 5000 })
     await A.keyboard.type('bold')
     await A.keyboard.press('Enter')
     await until(A, () => window.__sheet.style().font.b)
@@ -176,8 +177,12 @@ async function selectRange(page, a, b) {
     if ((await table()) !== 'Region=Sum of Amount East=7 North=15 South=32 Grand total=54') throw new Error('pivot table: ' + await table())
     await B.evaluate(() => window.__sheet.useSheet(0))
     // Rows above are filtered or taller now, so the cell is chosen, not clicked.
-    await B.evaluate(() => { window.__sheet.wrap.focus(); window.__sheet.select(7, 1) })
-    await B.keyboard.type('West\tFay\t9\n')
+    await B.focus('.grid-wrap')
+    await B.evaluate(() => window.__sheet.select(7, 1))
+    for (const [text, key] of [['West', 'Tab'], ['Fay', 'Tab'], ['9', 'Enter']]) {
+      await B.keyboard.type(text)
+      await B.keyboard.press(key)
+    }
     await until(A, (s) => window.__sheet.model.getFormattedCellValue(s, 5, 1) === 'West' && window.__sheet.model.getFormattedCellValue(s, 6, 2) === '63', pivotSheet)
     ok('pivot table: sums by region, and a row the colleague adds shows up in it')
 
