@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { boot, setBoot, user, toast } from '../lib/store.js'
+import { boot, setBoot, user } from '../lib/store.js'
 import { get, post } from '../lib/api.js'
 import { navigate } from '../lib/router.js'
 import { Button, Field, Logo } from '../ui.jsx'
@@ -81,7 +81,7 @@ function useCheck(path, value, minLength) {
 export function Signup() {
   const b = boot.value
   const suffix = b?.orgDomainSuffix || ''
-  const [f, setF] = useState({ org: '', slug: '', name: '', username: '', password: '', code: '', example: !!suffix })
+  const [f, setF] = useState({ org: '', slug: '', name: '', username: '', password: '', code: '' })
   const [slugTouched, setSlugTouched] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -97,9 +97,7 @@ export function Signup() {
     setBusy(true)
     setError('')
     try {
-      const res = await post('/api/signup', f)
-      setBoot(res)
-      if (res.exampleError) toast(res.exampleError, 'error')
+      setBoot(await post('/api/signup', f))
       const next = new URLSearchParams(location.search).get('next') || ''
       navigate(next.startsWith('/oauth/authorize?') ? next : '/', { replace: true })
     } catch (err) {
@@ -142,20 +140,7 @@ export function Signup() {
             <input class="input" value={f.code} onInput={set('code')} required />
           </Field>
         )}
-        {suffix && (
-          <fieldset class="start-choice">
-            <legend>Start with</legend>
-            <label class={f.example ? 'on' : ''}>
-              <input type="radio" name="start" checked={f.example} onChange={() => setF({ ...f, example: true })} />
-              <span><b>Example data</b><span class="muted">Two example colleagues with documents, files, mail, a shared inbox, a calendar and a chat to explore. Remove it all in Admin when you're ready.</span></span>
-            </label>
-            <label class={!f.example ? 'on' : ''}>
-              <input type="radio" name="start" checked={!f.example} onChange={() => setF({ ...f, example: false })} />
-              <span><b>An empty organisation</b><span class="muted">Just you, ready to add your own people and work.</span></span>
-            </label>
-          </fieldset>
-        )}
-        <Button kind="primary" class="btn-lg btn-block" type="submit" busy={busy}>{busy && f.example ? 'Setting up your example data…' : 'Create organisation'}</Button>
+        <Button kind="primary" class="btn-lg btn-block" type="submit" busy={busy}>Create organisation</Button>
       </form>
     </Card>
   )

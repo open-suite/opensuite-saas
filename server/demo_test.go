@@ -21,34 +21,12 @@ func TestDemoSeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	keys := map[string]bool{seedMe: true} // the founder, in example data
+	keys := map[string]bool{}
 	for _, p := range seed.People {
 		keys[p.Key] = true
-		if _, err := demoFiles.ReadFile("demo/" + p.Photo); err != nil || p.Photo == "" {
+		if _, err := demoFiles.ReadFile("demo/" + p.Photo); err != nil {
 			t.Errorf("%s has no picture: %v", p.Key, err)
 		}
-	}
-	// The demo's telling names nobody who is not in it.
-	demo := seed.withoutMe()
-	for _, m := range demo.Mail {
-		if m.From == seedMe || slices.Contains(m.To, seedMe) || strings.Contains(m.Body, "{me}") {
-			t.Errorf("mail %s names the founder in the demo", m.Key)
-		}
-	}
-	for _, g := range demo.Groups {
-		for _, m := range g.Members {
-			if m[0] == seedMe {
-				t.Errorf("group %s has the founder in the demo", g.Name)
-			}
-		}
-	}
-	for _, c := range demo.Chat {
-		if slices.Contains(c.Members, seedMe) || slices.ContainsFunc(c.Messages, func(m [2]string) bool { return strings.Contains(m[1], "{me}") }) {
-			t.Errorf("chat %s has the founder in the demo", c.Name)
-		}
-	}
-	if len(demo.Mail) == len(seed.Mail) || len(demo.Contacts) == len(seed.Contacts) {
-		t.Error("the example data has nothing of its own for the founder")
 	}
 	folders, rooms := map[string]bool{"": true}, map[string]bool{"": true}
 	for _, f := range seed.Folders {
@@ -114,18 +92,14 @@ func TestDemoSeed(t *testing.T) {
 
 	people := map[string]*User{"ada": {ID: "adaid0000001", Email: "ada@x"}, "grace": {ID: "graceid00001", Email: "grace@x"}}
 	at := time.Date(2026, 11, 26, 4, 0, 0, 0, time.UTC)
-	brief, err := personalise(demoAsset("brief.bin"), people, nil, at)
+	brief, err := demoPersonalise(demoAsset("brief.bin"), people, at)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Contains(brief, []byte("@ada@")) || bytes.Contains(brief, []byte("@grace@")) || !bytes.Contains(brief, []byte("graceid00001")) {
 		t.Error("people's stand-ins were not replaced")
 	}
-	deck, err := personalise(demoAsset("deck.bin"), people, map[string]string{"demoplannerscreen0001": "newpictureid000000001"}, at)
-	if err != nil || bytes.Contains(deck, []byte("demoplannerscreen0001")) || !bytes.Contains(deck, []byte("/api/blobs/newpictureid000000001")) {
-		t.Errorf("the deck's picture was not given its new id (%v)", err)
-	}
-	if again, _ := personalise(brief, people, nil, at.Add(time.Hour)); !bytes.Equal(again, brief) {
+	if again, _ := demoPersonalise(brief, people, at.Add(time.Hour)); !bytes.Equal(again, brief) {
 		t.Error("a time stand-in survived the first pass")
 	}
 	if len(brief) != len(demoAsset("brief.bin")) {

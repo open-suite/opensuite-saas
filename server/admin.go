@@ -57,14 +57,6 @@ func (s *Server) orgDomains(orgID string) []Domain {
 	return out
 }
 
-// memberCount is what the plan's people limit counts: everyone but the
-// example colleagues (example.go), who cannot sign in.
-func (s *Server) memberCount(orgID string) int {
-	var n int
-	s.r.QueryRow(`SELECT count(*) FROM users WHERE org_id = ? AND example = 0`, orgID).Scan(&n)
-	return n
-}
-
 // domainRecords lists what a customer must publish. Web access needs only the
 // first record; mail needs the rest.
 func (s *Server) domainRecords(orgID, domain, dkim string) []DNSRecord {
@@ -140,8 +132,10 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request, u *Use
 		in.Role = "member"
 	}
 	var plan string
+	var count int
 	s.r.QueryRow(`SELECT plan FROM orgs WHERE id = ?`, u.OrgID).Scan(&plan)
-	if lim := planFor(plan); s.memberCount(u.OrgID) >= lim.MaxUsers {
+	s.r.QueryRow(`SELECT count(*) FROM users WHERE org_id = ?`, u.OrgID).Scan(&count)
+	if lim := planFor(plan); count >= lim.MaxUsers {
 		fail(w, 402, "Your plan includes "+itoa(lim.MaxUsers)+" people. Upgrade to add more.")
 		return
 	}
@@ -221,10 +215,6 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, u *Use
 	}
 	if in.ResetPassword && t.isAgent() {
 		fail(w, 409, "Agents have no password. They sign in with API tokens.")
-		return
-	}
-	if in.ResetPassword && t.Example {
-		fail(w, 409, "Example colleagues cannot sign in. Add a real person instead.")
 		return
 	}
 	lastOwner := t.Role == "owner" && s.ownerCount(u.OrgID) <= 1
@@ -427,7 +417,7 @@ func (s *Server) handleOperatorOrgs(w http.ResponseWriter, r *http.Request, u *U
 	}
 	out := []row{}
 	rows, err := s.r.Query(`SELECT o.id, o.name, o.plan, o.created,
-		(SELECT count(*) FROM users WHERE org_id = o.id AND example = 0), (SELECT count(*) FROM docs WHERE org_id = o.id),
+		(SELECT count(*) FROM users WHERE org_id = o.id), (SELECT count(*) FROM docs WHERE org_id = o.id),
 		coalesce((SELECT domain FROM domains WHERE org_id = o.id AND kind = 'org'), '')
 		FROM orgs o ORDER BY o.created DESC LIMIT 1000`)
 	if err == nil {

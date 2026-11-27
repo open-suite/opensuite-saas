@@ -75,9 +75,6 @@ type Group struct {
 	Posting     string        `json:"posting"`
 	Created     int64         `json:"created"`
 	Members     []GroupMember `json:"members"`
-	// Example marks a group of the example data (seed.go), not counted
-	// against the plan.
-	Example bool `json:"example,omitempty"`
 	// As the caller sees it: their role, and for members the mailbox's
 	// account id, which names the group in the mail engine's change feed.
 	Role      string `json:"role,omitempty"`
@@ -110,14 +107,14 @@ func replyMark(userID string) string { return "os-replied-" + userID }
 // them (nil for no particular viewer).
 func (s *Server) orgGroups(orgID string, viewer *User) []Group {
 	out := []Group{}
-	rows, err := s.r.Query(`SELECT id, org_id, email, name, description, posting, mail_id, created, example FROM mail_groups WHERE org_id = ? ORDER BY name COLLATE NOCASE`, orgID)
+	rows, err := s.r.Query(`SELECT id, org_id, email, name, description, posting, mail_id, created FROM mail_groups WHERE org_id = ? ORDER BY name COLLATE NOCASE`, orgID)
 	if err != nil {
 		return out
 	}
 	byID := map[string]int{}
 	for rows.Next() {
 		var g Group
-		rows.Scan(&g.ID, &g.orgID, &g.Email, &g.Name, &g.Description, &g.Posting, &g.mailID, &g.Created, &g.Example)
+		rows.Scan(&g.ID, &g.orgID, &g.Email, &g.Name, &g.Description, &g.Posting, &g.mailID, &g.Created)
 		g.Members = []GroupMember{}
 		byID[g.ID] = len(out)
 		out = append(out, g)
@@ -564,7 +561,7 @@ func (s *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request, u *Us
 	var plan string
 	var count int
 	s.r.QueryRow(`SELECT plan FROM orgs WHERE id = ?`, u.OrgID).Scan(&plan)
-	s.r.QueryRow(`SELECT count(*) FROM mail_groups WHERE org_id = ? AND example = 0`, u.OrgID).Scan(&count)
+	s.r.QueryRow(`SELECT count(*) FROM mail_groups WHERE org_id = ?`, u.OrgID).Scan(&count)
 	if lim := planFor(plan); count >= lim.MaxGroups {
 		fail(w, 402, "Your plan includes "+itoa(lim.MaxGroups)+" groups. Upgrade to add more.")
 		return

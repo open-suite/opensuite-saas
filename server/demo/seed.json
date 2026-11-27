@@ -23,7 +23,7 @@
     { "kind": "doc", "title": "Launch stand-up notes", "asset": "notes.bin", "owner": "grace", "folder": "launch", "hoursAgo": 26 },
     { "kind": "sheet", "title": "Launch budget", "asset": "budget.bin", "owner": "ada", "folder": "launch", "hoursAgo": 20 },
     { "kind": "slides", "title": "Loom launch plan", "asset": "deck.bin", "owner": "ada", "folder": "launch", "hoursAgo": 50 },
-    { "kind": "doc", "title": "Loom 1.0 release checklist", "asset": "checklist.bin", "owner": "grace", "shares": [{ "user": "ada", "role": "edit" }, { "user": "me", "role": "edit" }], "hoursAgo": 18 }
+    { "kind": "doc", "title": "Loom 1.0 release checklist", "asset": "checklist.bin", "owner": "grace", "shares": [{ "user": "ada", "role": "edit" }], "hoursAgo": 18 }
   ],
   "meetings": [
     { "key": "standup", "title": "Launch stand-up", "owner": "ada" },
@@ -34,7 +34,7 @@
     {
       "key": "sales", "login": "sales", "name": "Sales", "posting": "anyone",
       "description": "Questions from workshops about Loom: prices, the pilot and orders.",
-      "members": [["ada", "admin"], ["grace", "user"], ["me", "admin"]]
+      "members": [["ada", "admin"], ["grace", "user"]]
     }
   ],
   "mail": [
@@ -46,7 +46,7 @@
     {
       "key": "sales-quote-2", "replyTo": "sales-quote", "from": "sales", "to": ["Tom Okafor <tom.okafor@okafor-joinery.example>"], "day": -2, "time": "15:02", "subject": "Re: A quote for a team of 14",
       "readBy": ["grace"],
-      "body": "Hi Tom,\n\nThanks for getting in touch. Yes: anything with its own queue of jobs can be a bench in Loom, a spray booth included.\n\nThe price is £29 per workshop per month, whatever the size of the team, and paying for a year up front gives you two months free.\n\nWould Thursday at 11:00 suit you for a 20-minute look at the planner with your own jobs in it?\n\nBest wishes,\nGrace Hopper\n{org}"
+      "body": "Hi Tom,\n\nThanks for getting in touch. Yes: anything with its own queue of jobs can be a bench in Loom, a spray booth included.\n\nThe price is £29 per workshop per month, whatever the size of the team, and paying for a year up front gives you two months free.\n\nWould Thursday at 11:00 suit you for a 20-minute look at the planner with your own jobs in it?\n\nBest wishes,\nGrace Hopper\nAnalytical Engines"
     },
     {
       "key": "sales-pilot", "from": "Marta Nowak <marta@nowak-ceramics.example>", "to": ["sales"], "day": -1, "time": "09:41", "subject": "Is the pilot still open?", "unread": true,
@@ -78,19 +78,11 @@
     },
     {
       "key": "interview", "from": "Tomás Ferreira <tomas@workshopweekly.example>", "to": ["ada"], "day": -2, "time": "14:05", "subject": "Interview request: the Loom launch",
-      "body": "Dear Ada,\n\nI write the small-business column at Workshop Weekly. A reader tells me {org} is launching a planning tool for workshops next week.\n\nWould you have 20 minutes for a phone interview before then? I'm free most mornings. I'd especially like to speak to one of your pilot customers, if one would be willing.\n\nBest wishes,\nTomás Ferreira\nSmall-business editor, Workshop Weekly"
+      "body": "Dear Ada,\n\nI write the small-business column at Workshop Weekly. A reader tells me Analytical Engines is launching a planning tool for workshops next week.\n\nWould you have 20 minutes for a phone interview before then? I'm free most mornings. I'd especially like to speak to one of your pilot customers, if one would be willing.\n\nBest wishes,\nTomás Ferreira\nSmall-business editor, Workshop Weekly"
     },
     {
       "key": "priya", "from": "Priya Shah <priya@shahanddaughters.example>", "to": ["grace"], "day": -4, "time": "10:30", "subject": "Our order spreadsheet for the import test",
       "body": "Hi Grace,\n\nAs promised, here is how we track orders at the moment: one row per job, with the customer, the fabric, the bench and the date we promised. There are about 140 open jobs in it. I'll send the file over this afternoon.\n\nYou're welcome to use it to test the new import. Shout if anything doesn't make sense; a few of the columns only mean something to my dad.\n\nPriya"
-    },
-    {
-      "key": "welcome", "from": "ada", "to": ["me"], "day": -1, "time": "08:40", "subject": "Welcome to the launch team", "unread": true,
-      "body": "Hi {me},\n\nWelcome aboard! Here's where we are with the Loom 1.0 launch, so you can find your way around:\n\n- Files, Loom launch: the launch brief, the budget and the launch plan deck. The press kit is in there too.\n- Grace keeps the release checklist and has shared it with you.\n- Mail to the Sales group lands in its own inbox, which you'll find in Mail beside yours. Two questions from yesterday still need an answer.\n- The launch stand-up is on Mondays, Wednesdays and Fridays at 9:30, and you're invited.\n\nAsk in the Loom launch chat if anything is unclear.\n\nAda"
-    },
-    {
-      "key": "checklist-ask", "from": "grace", "to": ["me"], "day": -1, "time": "13:15", "subject": "Two items on the release checklist", "unread": true,
-      "body": "Hi {me},\n\nCould you take two items on the release checklist this week: the release notes, and replying to Tomás at Workshop Weekly about the interview? Both are in the Loom 1.0 release checklist, which I've shared with you. Tick them off there when they're done.\n\nThanks!\nGrace"
     },
     {
       "key": "priya-2", "replyTo": "priya", "from": "grace", "to": ["Priya Shah <priya@shahanddaughters.example>"], "day": -4, "time": "11:02", "subject": "Re: Our order spreadsheet for the import test",
@@ -98,42 +90,37 @@
     }
   ],
   "events": [
-    { "title": "Launch stand-up", "owner": "ada", "guests": ["grace", "me"], "week": 0, "day": "mon", "time": "09:30", "minutes": 15, "repeat": ["mo", "we", "fr"], "meeting": "standup" },
+    { "title": "Launch stand-up", "owner": "ada", "guests": ["grace"], "week": 0, "day": "mon", "time": "09:30", "minutes": 15, "repeat": ["mo", "we", "fr"], "meeting": "standup" },
     { "title": "Pilot call: Shah & Daughters", "owner": "grace", "week": 0, "day": "tue", "time": "11:00", "minutes": 45, "place": "Phone: +44 116 496 0532", "meeting": "pilots", "description": "Walk Priya through the guided import with her own spreadsheet." },
     { "title": "Call with the Guild of Furniture Makers", "owner": "ada", "week": 0, "day": "tue", "time": "12:30", "minutes": 30, "place": "Phone", "description": "Ask them to announce the launch webinar to members." },
     { "title": "Webinar slides review", "owner": "ada", "guests": ["grace"], "week": 0, "day": "thu", "time": "15:30", "minutes": 45, "meeting": "webinar", "description": "Walk through the Loom launch plan deck and cut it to ten minutes." },
     { "title": "Release candidate review", "owner": "grace", "guests": ["ada"], "week": 0, "day": "wed", "time": "14:00", "minutes": 60, "place": "Office, big table", "description": "Go through rc2 on staging together. Bring the release checklist." },
     { "title": "Press kit sign-off", "owner": "ada", "week": 0, "day": "fri", "time": "11:00", "minutes": 30, "description": "Fact sheet, logo and screenshot in the Press kit folder." },
     { "title": "Approve flyer proof", "owner": "ada", "week": 0, "day": "fri", "time": "12:00", "minutes": 15, "description": "Brightline needs the answer by noon." },
-    { "title": "Pricing review", "owner": "ada", "guests": ["grace", "me"], "week": 1, "day": "mon", "time": "14:00", "minutes": 60, "place": "Office, big table", "description": "£29 or £39 per workshop per month. Grace brings the conversion numbers." },
+    { "title": "Pricing review", "owner": "ada", "guests": ["grace"], "week": 1, "day": "mon", "time": "14:00", "minutes": 60, "place": "Office, big table", "description": "£29 or £39 per workshop per month. Grace brings the conversion numbers." },
     { "title": "Interview with Workshop Weekly", "owner": "ada", "week": 1, "day": "tue", "time": "10:00", "minutes": 30, "place": "Phone" },
     { "title": "Flyers delivered", "owner": "ada", "week": 1, "day": "wed", "allDay": true, "description": "2,000 flyers from Brightline Print." },
     { "title": "Webinar rehearsal", "owner": "ada", "guests": ["grace"], "week": 1, "day": "wed", "time": "15:00", "minutes": 90, "meeting": "webinar" },
-    { "title": "Loom 1.0 launch", "owner": "ada", "guests": ["grace", "me"], "week": 1, "day": "thu", "allDay": true },
-    { "title": "Launch webinar for the Guild of Furniture Makers", "owner": "ada", "guests": ["grace", "me"], "week": 1, "day": "thu", "time": "16:00", "minutes": 60, "meeting": "webinar", "description": "Ten minutes of slides, then the planner live with Priya's data, then questions." },
-    { "title": "First-week numbers", "owner": "ada", "guests": ["grace", "me"], "week": 1, "day": "fri", "time": "10:00", "minutes": 45 },
-    { "title": "Welcome coffee with Ada", "owner": "ada", "guests": ["me"], "week": 1, "day": "mon", "time": "10:00", "minutes": 30, "place": "Office kitchen", "description": "A half-hour tour of the launch for {me}, with coffee." }
+    { "title": "Loom 1.0 launch", "owner": "ada", "guests": ["grace"], "week": 1, "day": "thu", "allDay": true },
+    { "title": "Launch webinar for the Guild of Furniture Makers", "owner": "ada", "guests": ["grace"], "week": 1, "day": "thu", "time": "16:00", "minutes": 60, "meeting": "webinar", "description": "Ten minutes of slides, then the planner live with Priya's data, then questions." },
+    { "title": "First-week numbers", "owner": "ada", "guests": ["grace"], "week": 1, "day": "fri", "time": "10:00", "minutes": 45 }
   ],
   "contacts": [
     { "owner": "ada", "given": "Hannah", "surname": "Brooks", "company": "Brightline Print", "title": "Account manager", "email": "hannah.brooks@brightline-print.example", "phone": "+44 20 7946 0321" },
     { "owner": "ada", "given": "Tomás", "surname": "Ferreira", "company": "Workshop Weekly", "title": "Small-business editor", "email": "tomas@workshopweekly.example", "phone": "+44 20 7946 0874" },
     { "owner": "ada", "given": "Priya", "surname": "Shah", "company": "Shah & Daughters Upholstery", "title": "Director", "email": "priya@shahanddaughters.example", "phone": "+44 116 496 0532", "note": "Pilot customer since the summer. Happy to talk to the press." },
-    { "owner": "grace", "given": "Priya", "surname": "Shah", "company": "Shah & Daughters Upholstery", "title": "Director", "email": "priya@shahanddaughters.example", "phone": "+44 116 496 0532" },
-    { "owner": "me", "given": "Priya", "surname": "Shah", "company": "Shah & Daughters Upholstery", "title": "Director", "email": "priya@shahanddaughters.example", "phone": "+44 116 496 0532", "note": "Pilot customer since the summer. Happy to talk to the press." },
-    { "owner": "me", "given": "Tomás", "surname": "Ferreira", "company": "Workshop Weekly", "title": "Small-business editor", "email": "tomas@workshopweekly.example", "phone": "+44 20 7946 0874" }
+    { "owner": "grace", "given": "Priya", "surname": "Shah", "company": "Shah & Daughters Upholstery", "title": "Director", "email": "priya@shahanddaughters.example", "phone": "+44 116 496 0532" }
   ],
   "chat": [
     {
-      "name": "Loom launch", "owner": "ada", "members": ["grace", "me"],
+      "name": "Loom launch", "owner": "ada", "members": ["grace"],
       "messages": [
         ["ada", "Morning! The flyer proof from Brightline is in my inbox. I'll look at it before the stand-up."],
         ["grace", "Great. rc2 is on staging, with the guided import in it."],
         ["grace", "I tried it with Priya's spreadsheet: 140 jobs in under a minute, and only two columns needed matching by hand."],
         ["ada", "That's the demo for the webinar, then."],
         ["ada", "Could you add the pilot numbers to the brief before Monday's pricing review? Doesn't need to be pretty."],
-        ["grace", "Will do after lunch."],
-        ["ada", "{me} has joined us today. Welcome! Everything for the launch is in Files, Loom launch, and we talk it through here."],
-        ["grace", "Welcome, {me}! I've sent you two items from the release checklist."]
+        ["grace", "Will do after lunch."]
       ]
     }
   ]

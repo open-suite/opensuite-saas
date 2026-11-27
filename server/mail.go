@@ -259,14 +259,18 @@ func (s *Server) mailSyncCert(ctx context.Context) {
 	}
 	var q queryResult
 	json.Unmarshal(res[0].Args, &q)
-	if len(q.IDs) == 0 {
-		_, err = s.jmapAdmin(ctx, s.cfg.MailURL, jmapCall{"x:Certificate/set", map[string]any{"create": map[string]any{"c": map[string]any{
-			"certificate": map[string]string{"@type": "File", "filePath": crt},
-			"privateKey":  map[string]string{"@type": "File", "filePath": filepath.Join(s.cfg.CertDir, s.cfg.MailHost+".key")}}}}})
-		if err != nil {
-			log.Printf("mail: certificate create: %v", err)
-			return
-		}
+	cert := map[string]any{
+		"certificate": map[string]string{"@type": "File", "filePath": crt},
+		"privateKey":  map[string]string{"@type": "File", "filePath": filepath.Join(s.cfg.CertDir, s.cfg.MailHost+".key")}}
+	// One certificate, always the mail host's: pointed again at its files,
+	// so changing OS_MAIL_HOST changes what the engine presents.
+	set := map[string]any{"create": map[string]any{"c": cert}}
+	if len(q.IDs) > 0 {
+		set = map[string]any{"update": map[string]any{q.IDs[0]: cert}}
+	}
+	if _, err = s.jmapAdmin(ctx, s.cfg.MailURL, jmapCall{"x:Certificate/set", set}); err != nil {
+		log.Printf("mail: certificate: %v", err)
+		return
 	}
 	s.jmapAdmin(ctx, s.cfg.MailURL, jmapCall{"x:Action/set", map[string]any{"create": map[string]any{"a": map[string]string{"@type": "ReloadTlsCertificates"}}}})
 }

@@ -10,13 +10,22 @@
 # nothing about Open Suite differs from a dedicated server. On a dedicated
 # server this script is not needed at all.
 #
-#   coexist-k3s.sh <domain>       add the route
-#   coexist-k3s.sh <domain> off   remove it
+#   coexist-k3s.sh <domain> [host ...]   add the route, for the app's host
+#                                        and others such as the mail host
+#                                        (its certificate is issued over HTTP)
+#   coexist-k3s.sh <domain> off          remove it
 set -euo pipefail
-DOMAIN=${1:?usage: coexist-k3s.sh <domain> [off]}
+DOMAIN=${1:?usage: coexist-k3s.sh <domain> [host ...|off]}
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 BRIDGE=$(ip -4 -o addr show cni0 | sed -n 's/.* inet \([0-9.]*\)\/.*/\1/p')
 NAME=opensuite-native
+SNI="HostSNI(\`$DOMAIN\`)"
+HOST="Host(\`$DOMAIN\`)"
+for h in "${@:2}"; do
+  [ "$h" = off ] && continue
+  SNI="$SNI || HostSNI(\`$h\`)"
+  HOST="$HOST || Host(\`$h\`)"
+done
 
 if [ "${2:-}" = off ]; then
   kubectl -n kube-system delete ingressroutetcp,ingressroute,service,endpoints "$NAME" --ignore-not-found
@@ -59,7 +68,7 @@ metadata: { name: $NAME, namespace: kube-system }
 spec:
   entryPoints: [websecure]
   routes:
-    - match: HostSNI(\`$DOMAIN\`)
+    - match: $SNI
       services:
         - { name: $NAME, port: 9443, proxyProtocol: { version: 2 } }
   tls: { passthrough: true }
@@ -70,9 +79,9 @@ metadata: { name: $NAME, namespace: kube-system }
 spec:
   entryPoints: [web]
   routes:
-    - match: Host(\`$DOMAIN\`)
+    - match: $HOST
       kind: Rule
       services:
         - { name: $NAME, port: 9080 }
 EOF
-echo "routed $DOMAIN through Traefik to nginx on $BRIDGE"
+echo "routed $DOMAIN ${*:2} through Traefik to nginx on $BRIDGE"

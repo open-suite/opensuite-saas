@@ -147,7 +147,7 @@ export function GroupsAdmin({ data }) {
   return (
     <>
       <div class="row" style={{ marginBottom: 14, flexWrap: 'wrap' }}>
-        <span class="grow muted" style={{ minWidth: 180 }}>{list.filter((g) => !g.example).length} of {data?.limits?.maxGroups ?? '…'} groups on the {data?.limits?.label || ''} plan{list.some((g) => g.example) ? ', not counting the example group' : ''}</span>
+        <span class="grow muted" style={{ minWidth: 180 }}>{list.length} of {data?.limits?.maxGroups ?? '…'} groups on the {data?.limits?.label || ''} plan</span>
         <Button kind="primary" icon={Plus} onClick={() => setDialog({ type: 'new' })}>New group</Button>
       </div>
       {list.length === 0 ? (

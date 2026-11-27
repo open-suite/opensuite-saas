@@ -93,8 +93,10 @@ settings pass through the environment: `OS_SIGNUP` (`open`, `code`, `closed`),
 organisation, put back to the example story in `server/demo/` every morning at
 04:00 Berlin time and from Admin → All organisations), and
 `OS_ORG_DOMAIN_SUFFIX` (e.g. `opensuite.online`: every new organisation gets
-`<name>.opensuite.online` for its addresses, and may start with the example
-story as example data; publish a wildcard MX record for the suffix).
+`<name>.opensuite.online` for its addresses; publish a wildcard MX record for
+the suffix pointing at `OS_MAIL_HOST`), and `OS_MAIL_HOST` (the name MX
+records point at, e.g. `mail.opensuite.online`; the mail engine presents its
+certificate; default the web domain).
 
 For mail to be accepted by other providers, publish for the mail domain: an
 MX record to the server, SPF, the DKIM keys the mail engine generated (shown

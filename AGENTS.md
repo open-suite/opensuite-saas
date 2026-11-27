@@ -237,7 +237,7 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   for home, calendar and search. `apps/groups.jsx` is Admin → Groups and the
   settings dialog Mail opens for group admins. `tests/e2e-groups.cjs`.
 
-## Organisation domains, example data, pictures (added 2026-11-26)
+## Organisation domains and pictures (added 2026-11-26)
 
 - **Own domains** (`server/orgdomain.go`). With `OS_ORG_DOMAIN_SUFFIX` set,
   sign-up makes `<slug>.<suffix>` a `domains` row of `kind = 'org'`,
@@ -249,25 +249,26 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   under the suffix can be added as a custom domain. `reservedSlugs` holds
   every host name in use under the demo and production domains; add any new
   host there. Organisations made before the setting keep the shared domain;
-  nothing migrates them. Without the setting sign-up is as before and
-  example data is refused. `dev/run.sh` sets the suffix to the instance's
-  mail domain.
-- **DNS.** Mail for `<slug>.demo.opensuite.online` arrives through the
-  wildcard A record (no MX: senders fall back to the A record). For
-  `opensuite.online` the suffix needs a wildcard MX (see the handover note in
-  the report of 2026-11-26).
-- **Example data** (`server/seed.go`, the story in `server/demo/seed.json`
-  shared with the demo through `tell` in `demo.go`). Seed entries naming
-  `me` (the founder) exist only in example data; `withoutMe` drops them for
-  the demo, and `{me}`/`{org}` in text are filled per organisation. Example
-  colleagues are `users.example = 1` with no password and do not count
-  against the people limit (`memberCount`); the example group is
-  `mail_groups.example = 1` and does not count against the group limit.
-  Everything made is recorded in `example_items` (after the content
-  transaction commits: the single writer is held until then), and
-  `admin_remove_example_data` deletes exactly that. Documents embed picture
-  ids, so example data gives the seed's pictures new ids of the same length
-  (`personalise`). `tests/e2e-signup.cjs` checks both sign-up paths.
+  nothing migrates them. Without the setting sign-up is as before.
+  `dev/run.sh` sets the suffix to the instance's mail domain. New
+  organisations always start empty; only the demo organisation has the
+  story. `tests/e2e-signup.cjs` checks sign-up.
+- **DNS** (Namecheap, set 2026-11-27): `mail.opensuite.online` A to this
+  box, `*.opensuite.online` MX 10 `mail.opensuite.online`, a wildcard SPF
+  TXT, and `_dmarc.opensuite.online` `p=none`. No wildcard A, so organisation
+  domains are mail only. The demo runs with `OS_MAIL_HOST=mail.opensuite.online`:
+  the app gets its certificate over HTTP-01 (port 80 reaches nginx through
+  `deploy/coexist-k3s.sh office.demo.opensuite.online mail.opensuite.online`)
+  and `mailSyncCert` points the engine at it, so port 25 presents it.
+  Organisations made under `*.demo.opensuite.online` before the switch keep
+  those domains, which reach the box through the old wildcard A record.
+- **Outbound** from an organisation's own domain goes through Brevo, which
+  signs it with its own shared domain (no DMARC alignment): mail to other
+  providers can land in spam. Fixing that (one DKIM key on the parent
+  domain, delivered directly) was deliberately left for later.
+- Columns `users.example`, `orgs.example`, `mail_groups.example` and the
+  table `example_items` on the demo box are left from example data, which
+  was built and removed on 2026-11-26/27; nothing reads them.
 - **Profile pictures** (`server/photos.go`, `Avatar` in `ui.jsx`). Stored as
   `<data>/photos/<user id>`, PNG, JPEG or WebP up to 1 MB, served only to the
   same organisation with `nosniff` and a sandbox CSP. `users.photo` is a
@@ -310,7 +311,7 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
   working). k3s captures ports 80/443, so `deploy/coexist-k3s.sh` adds a
   Traefik TCP passthrough (kube-system objects named `opensuite-native`) to
   nginx on `10.42.0.1:9443/9080`. On a dedicated server none of that exists.
-- Deploy: `OS_OPERATORS=ada@demo.opensuite.online OS_SIGNUP=open OS_MAIL_RELAY=file:/etc/opensuite/mail-relay OS_DEMO=file:/etc/opensuite/demo OS_ORG_DOMAIN_SUFFIX=demo.opensuite.online deploy/deploy.sh root@95.217.109.206 office.demo.opensuite.online file:/etc/opensuite/acme-email demo.opensuite.online`
+- Deploy: `OS_OPERATORS=ada@demo.opensuite.online OS_SIGNUP=open OS_MAIL_RELAY=file:/etc/opensuite/mail-relay OS_DEMO=file:/etc/opensuite/demo OS_ORG_DOMAIN_SUFFIX=opensuite.online OS_MAIL_HOST=mail.opensuite.online deploy/deploy.sh root@95.217.109.206 office.demo.opensuite.online file:/etc/opensuite/acme-email demo.opensuite.online`
   The settings are rewritten on every deploy, so pass all of them each time.
   `/etc/opensuite/demo` names "Analytical Engines" (`j7axt4urdx`) and the
   two demo passwords. The box also has an `opensuite-demo-reset` timer: that

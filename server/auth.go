@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -21,9 +20,6 @@ type User struct {
 	// mailbox, calendar and files, but no password: it acts only through API
 	// tokens (tokens.go).
 	Kind string
-	// Example marks a colleague made by "Start with example data"
-	// (example.go): no password, and not counted against the plan.
-	Example bool
 }
 
 func (u *User) isAdmin() bool { return u.Role == "owner" || u.Role == "admin" }
@@ -63,12 +59,12 @@ var usernameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,30}[a-z0-9]$`)
 var reservedNames = []string{"admin", "administrator", "postmaster", "abuse", "root", "support", "noreply", "no-reply",
 	"hostmaster", "webmaster", "mailer-daemon", "security", "opensuite", "billing", "help", "info", "system"}
 
-const userCols = `u.id, u.org_id, u.email, u.name, u.role, u.status, u.mx_local, u.mx_token, u.mail_secret, u.must_change, u.mail_ready, u.mail_id, u.kind, u.example`
+const userCols = `u.id, u.org_id, u.email, u.name, u.role, u.status, u.mx_local, u.mx_token, u.mail_secret, u.must_change, u.mail_ready, u.mail_id, u.kind`
 
 // scanUser reads userCols, then any extra columns selected after them.
 func scanUser(row interface{ Scan(...any) error }, extra ...any) (*User, error) {
 	u := &User{}
-	err := row.Scan(append([]any{&u.ID, &u.OrgID, &u.Email, &u.Name, &u.Role, &u.Status, &u.MxLocal, &u.MxToken, &u.MailSecret, &u.MustChange, &u.MailReady, &u.MailID, &u.Kind, &u.Example}, extra...)...)
+	err := row.Scan(append([]any{&u.ID, &u.OrgID, &u.Email, &u.Name, &u.Role, &u.Status, &u.MxLocal, &u.MxToken, &u.MailSecret, &u.MustChange, &u.MailReady, &u.MailID, &u.Kind}, extra...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -199,9 +195,6 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		// Slug names the organisation's own domain, <slug>.<suffix>, when
 		// the installation gives organisations one; derived from Org if empty.
 		Slug string
-		// Example asks for example colleagues, files, mail, events and chat
-		// (example.go) instead of an empty organisation.
-		Example bool
 	}
 	if readJSON(r, &in) != nil {
 		fail(w, 400, "bad request")
@@ -237,10 +230,6 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		domain = in.Slug + "." + s.cfg.OrgDomainSuffix
-	} else if in.Example {
-		// Example colleagues need addresses that belong to the organisation.
-		fail(w, 400, "Example data needs organisations to have their own address, which this server does not give them.")
-		return
 	}
 	if msg := validLocalPart(in.Username, domain == s.cfg.MailDomain); msg != "" {
 		fail(w, 400, msg)
@@ -282,20 +271,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	s.startSession(w, r, userID)
 	u := s.userByID(userID)
 	s.provision(u)
-	out := s.boot(s.userByID(userID))
-	if in.Example {
-		// Made before answering, so the first screen already shows it. A
-		// failure leaves what was made, which "Remove example data" clears.
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		err := s.seedExample(ctx, s.userByID(userID))
-		out = s.boot(s.userByID(userID))
-		if err != nil {
-			log.Printf("signup: example data for %s: %v", orgID, err)
-			out["exampleError"] = "Some of the example data could not be added. Remove it from Admin, Organisation."
-		}
-	}
-	ok(w, out)
+	ok(w, s.boot(s.userByID(userID)))
 }
 
 func (s *Server) userByID(id string) *User {
@@ -399,14 +375,13 @@ func (s *Server) boot(u *User) map[string]any {
 		return base
 	}
 	var orgName, plan string
-	var example bool
-	s.r.QueryRow(`SELECT name, plan, example FROM orgs WHERE id = ?`, u.OrgID).Scan(&orgName, &plan, &example)
+	s.r.QueryRow(`SELECT name, plan FROM orgs WHERE id = ?`, u.OrgID).Scan(&orgName, &plan)
 	base["user"] = map[string]any{
 		"id": u.ID, "name": u.Name, "email": u.Email, "role": u.Role,
 		"mustChange": u.MustChange, "operator": s.isOperator(u), "agent": u.isAgent(),
 	}
 	base["org"] = map[string]any{"id": u.OrgID, "name": orgName, "plan": plan, "limits": planFor(plan),
-		"mailDomains": s.mailDomainsFor(u.OrgID), "example": example}
+		"mailDomains": s.mailDomainsFor(u.OrgID)}
 	base["people"] = s.people(u.OrgID)
 	base["groups"] = s.orgGroups(u.OrgID, u)
 	base["docs"] = s.docList(u)
@@ -431,13 +406,12 @@ type Person struct {
 	Seen   int64  `json:"seen"`
 	Agent  bool   `json:"agent,omitempty"`
 	// Photo changes whenever their picture does (photos.go); 0 for none.
-	Photo   int64 `json:"photo,omitempty"`
-	Example bool  `json:"example,omitempty"`
+	Photo int64 `json:"photo,omitempty"`
 }
 
 func (s *Server) people(orgID string) []Person {
 	out := []Person{}
-	rows, err := s.r.Query(`SELECT id, name, email, role, status, mx_local, last_seen, kind, photo, example FROM users WHERE org_id = ? ORDER BY name COLLATE NOCASE`, orgID)
+	rows, err := s.r.Query(`SELECT id, name, email, role, status, mx_local, last_seen, kind, photo FROM users WHERE org_id = ? ORDER BY name COLLATE NOCASE`, orgID)
 	if err != nil {
 		return out
 	}
@@ -445,7 +419,7 @@ func (s *Server) people(orgID string) []Person {
 	for rows.Next() {
 		var p Person
 		var mx, kind string
-		rows.Scan(&p.ID, &p.Name, &p.Email, &p.Role, &p.Status, &mx, &p.Seen, &kind, &p.Photo, &p.Example)
+		rows.Scan(&p.ID, &p.Name, &p.Email, &p.Role, &p.Status, &mx, &p.Seen, &kind, &p.Photo)
 		p.Mx = s.mxid(mx)
 		p.Agent = kind == "agent"
 		out = append(out, p)

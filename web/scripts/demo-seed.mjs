@@ -246,7 +246,7 @@ function deck() {
     slides: [
       { id: 's1', layout: 'title', notes: 'Two minutes, no more. The story is: pilots work, now we sell.', els: [
         box('s1t', 'title', 96, 240, 1088, 160, lines('Loom 1.0'), { valign: 'bottom' }),
-        box('s1s', 'subtitle', 96, 416, 1088, 90, lines('Launch plan · Thursday next week'), { valign: 'top' }),
+        box('s1s', 'subtitle', 96, 416, 1088, 90, lines('Launch plan · Analytical Engines'), { valign: 'top' }),
       ] },
       { id: 's2', layout: 'titleBody', notes: 'Mention Priya by name: Shah & Daughters is the best story we have.', els: [
         box('s2t', 'title', 80, 52, 1120, 104, lines('Why now'), { valign: 'middle' }),
