@@ -508,11 +508,11 @@ export class Sheet {
   }
 
   activeFilter() {
+    // A view not (yet) in the workbook leaves the sheet's own filter in use;
+    // it may still arrive with the rest of the workbook.
     if (this.view) {
       const v = this.meta('view').find((x) => x.id === this.view)
-      if (v?.ref) {
-        if (v.ref.sheet === this.sheet) return v
-      } else this.view = null
+      if (v?.ref?.sheet === this.sheet) return v
     }
     return this.model ? filterOf(this.model, this.sheet, this, this.rev) : null
   }

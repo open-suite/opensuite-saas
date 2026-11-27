@@ -598,10 +598,12 @@ function writePivot(m, p, target) {
       wrote++
     }
   }
-  // Headings and totals in bold, once.
+  // Headings and totals in bold, the rows between not (they move as labels come and go).
   if (wrote && rows) {
-    if (!m.getCellStyle(target, 1, 1).style.font.b) m.updateRangeStyle({ sheet: target, row: 1, column: 1, width: cols, height: 1 }, 'font.b', 'true')
-    if (!m.getCellStyle(target, rows, 1).style.font.b) m.updateRangeStyle({ sheet: target, row: rows, column: 1, width: cols, height: 1 }, 'font.b', 'true')
+    if (rows > 2) m.updateRangeStyle({ sheet: target, row: 2, column: 1, width: C, height: rows - 2 }, 'font.b', 'false')
+    m.updateRangeStyle({ sheet: target, row: 1, column: 1, width: cols, height: 1 }, 'font.b', 'true')
+    m.updateRangeStyle({ sheet: target, row: rows, column: 1, width: cols, height: 1 }, 'font.b', 'true')
+    if (R > rows) m.updateRangeStyle({ sheet: target, row: rows + 1, column: 1, width: C, height: R - rows }, 'font.b', 'false')
   }
   return wrote
 }

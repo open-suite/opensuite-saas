@@ -190,10 +190,12 @@ export default function SheetView({ id }) {
     // A link to a filter view (?fv=) opens it on this screen.
     s.view = new URLSearchParams(location.search).get('fv')
     ctl.current = s
+    window.__sheet = s // for tests/e2e-sheet-tools.cjs
     s.open(wrap.current, canvas.current, scroll.current, spacer.current)
     bump((n) => n + 1) // draw the toolbar before this frame is painted
     return () => {
       cancelAnimationFrame(raf)
+      if (window.__sheet === s) window.__sheet = null
       ctl.current = null
       s.close()
     }
