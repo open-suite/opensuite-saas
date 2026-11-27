@@ -154,7 +154,7 @@ function numberFootnotes(doc) {
   doc.body.append(section)
 }
 
-function fillContents(doc) {
+function fillContents(doc, styles) {
   const navs = [...doc.querySelectorAll('nav[data-toc]')]
   if (!navs.length) return
   const used = new Set()
@@ -185,9 +185,11 @@ function fillContents(doc) {
       p.append(a)
       nav.append(p)
     }
-    // pandoc reads a <nav> as a plain block of its contents.
+    // pandoc reads a <nav> as a plain block of its contents; as a style the
+    // contents come back from Word as contents.
     const div = doc.createElement('div')
     div.className = 'toc'
+    if (styles) div.setAttribute('data-custom-style', 'OS_Contents')
     div.append(...nav.childNodes)
     nav.replaceWith(div)
   }
@@ -221,7 +223,7 @@ export function exportCopy(html, { page, title = 'Untitled', target = 'word' } =
       if (name) h.id = 'h' + ++n + '-' + name
     }
   }
-  fillContents(doc)
+  fillContents(doc, styles)
   if (styles) {
     for (const el of doc.querySelectorAll('span[style], mark')) {
       const f = {}
@@ -268,10 +270,10 @@ export function importCopy(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   for (const el of doc.querySelectorAll('[data-custom-style]')) {
     const name = el.getAttribute('data-custom-style')
-    if (name === 'OS_PageBreak') {
-      const br = doc.createElement('div')
-      br.setAttribute('data-page-break', '')
-      el.replaceWith(br)
+    if (name === 'OS_PageBreak' || name === 'OS_Contents') {
+      const node = doc.createElement(name === 'OS_Contents' ? 'nav' : 'div')
+      node.setAttribute(name === 'OS_Contents' ? 'data-toc' : 'data-page-break', '')
+      el.replaceWith(node)
       continue
     }
     const f = parseStyleName(name)

@@ -11,10 +11,11 @@ import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
 import { Placeholder, CharacterCount } from '@tiptap/extensions'
 import { yXmlFragmentToProseMirrorRootNode, yUndoPluginKey } from '@tiptap/y-tiptap'
+import { NodeSelection } from '@tiptap/pm/state'
 import {
   ArrowLeft, Undo2, Redo2, Bold, Italic, Underline, Strikethrough, Highlighter, Baseline, Link2, List, ListOrdered, ListChecks,
-  AlignLeft, AlignCenter, AlignRight, Quote, Code2, Table, ImagePlus, Minus, RemoveFormatting, Users, MoreHorizontal,
-  Printer, FileDown, Trash2, FileX2, Rows3, Columns3, MessageSquarePlus, MessageSquare, History,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify, Table, ImagePlus, RemoveFormatting, Users, FileX2, MessageSquarePlus, MessageSquare,
+  IndentIncrease, IndentDecrease, Rows3, Superscript,
 } from 'lucide-preact'
 import './editor.css'
 import { user, docs, upsertDoc, toast, confirmed } from '../lib/store.js'
@@ -22,11 +23,17 @@ import { navigate } from '../lib/router.js'
 import { api, post, refreshBoot } from '../lib/api.js'
 import { DocSocket, fetchState } from '../lib/sync.js'
 import { findDoc, renameDoc, trashDoc, convert, whenCreated } from '../lib/docs.js'
-import { colorFor, cx, debounce, download, pickFile, newId } from '../lib/util.js'
+import { colorFor, cx, debounce, download as saveFile, pickFile, newId } from '../lib/util.js'
 import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkColors, markColors, keepFocus } from '../ui.jsx'
+import { MenuBar } from '../menubar.jsx'
 import { ShareDialog } from './docs.jsx'
 import { suggestKey, isSuggesting, setSuggesting } from './doc-marks.js'
-import { formatExtensions, docText, readingCopy } from './doc-format.js'
+import { formatExtensions, docText, exportCopy, importCopy, fonts, fontSizes } from './doc-format.js'
+import { setImageLayout, lineHeights } from './doc-layout.js'
+import { FindReplace } from './doc-find.js'
+import { readPage, setPage, adoptPage, pageFromHTML, pageMap, pageSize, printCSS, fillTokens, pageDefaults, MM } from './doc-page.js'
+import { docMenus, tableSizes, lineLabel } from './doc-menus.jsx'
+import { PageSetup, WordCount, Shortcuts, FindBar, FootnoteBox, PictureBar } from './doc-tools.jsx'
 import { adoptThreads } from './doc-comments.js'
 import { Review, ReviewStyle, reviewItems, reviewAtCaret, startThread, unmarkThread } from './doc-review.jsx'
 
@@ -79,6 +86,7 @@ function extensionsFor(ydoc, awareness, who) {
     }),
     Placeholder.configure({ placeholder: 'Start writing…' }),
     CharacterCount,
+    FindReplace,
   ]
 }
 
@@ -260,17 +268,27 @@ function openDocument(id, element, me, role, onChange) {
   // happens while this view is closing.
   sock.text = () => docText(editor.state.doc)
 
-  // A file chosen in "Import" becomes this document's first content.
+  // A file chosen in "Import" becomes this document's first content, with
+  // the page setup it came with.
   local.whenSynced.then(() => {
     const key = 'os:import:' + id
     const html = sessionStorage.getItem(key)
-    if (html && editor.isEmpty) editor.commands.setContent(html)
+    if (html && editor.isEmpty) {
+      editor.commands.setContent(importCopy(html))
+      const page = pageFromHTML(html)
+      if (page) setPage(ydoc, page)
+    }
     sessionStorage.removeItem(key)
   })
 
-  // Comments are shared state outside the text, so they need their own nudge.
+  // Comments and the page setup are shared state outside the text, so they
+  // need their own nudge.
   state.rev = 0
   ydoc.getMap('comments').observeDeep(() => {
+    state.rev++
+    onChange()
+  })
+  pageMap(ydoc).observe(() => {
     state.rev++
     onChange()
   })
@@ -299,16 +317,17 @@ function openDocument(id, element, me, role, onChange) {
   }
 }
 
-// A downloaded copy is the reading form with its pictures carried inside.
-async function inlineImages(html) {
-  const doc = readingCopy(html)
+
+// A downloaded copy carries its pictures inside.
+async function inlinePictures(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
   for (const img of doc.querySelectorAll('img[src^="/api/blobs/"]')) {
     try {
       const blob = await (await fetch(img.getAttribute('src'))).blob()
       img.setAttribute('src', await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) }))
     } catch {}
   }
-  return doc.body.innerHTML
+  return '<!doctype html>' + doc.documentElement.outerHTML
 }
 
 const modes = [['edit', 'Editing'], ['suggest', 'Suggesting'], ['view', 'Viewing']]
@@ -323,32 +342,25 @@ function ModeSelect({ mode, role, onMode }) {
   )
 }
 
-function Toolbar({ editor, mode, role, onMode, onComment }) {
-  const [link, setLink] = useState(null)
+const aligns = [['left', 'Align left', AlignLeft], ['center', 'Centre', AlignCenter], ['right', 'Align right', AlignRight], ['justify', 'Justify', AlignJustify]]
+
+function Toolbar({ editor, mode, role, onMode, a }) {
   const c = () => editor.chain().focus()
   const on = (name, attrs) => editor.isActive(name, attrs)
   const block = on('heading', { level: 1 }) ? 'h1' : on('heading', { level: 2 }) ? 'h2' : on('heading', { level: 3 }) ? 'h3' : 'p'
+  const style = editor.getAttributes('textStyle')
+  const para = { ...editor.getAttributes('paragraph'), ...editor.getAttributes('heading') }
+  // Straight back to the text after a list is used, so the next keystroke
+  // lands there.
+  const back = () => editor.view.focus()
   const setBlock = (v) => {
     if (v === 'p') editor.chain().setParagraph().run()
     else editor.chain().setHeading({ level: +v[1] }).run()
-    // Straight back to the text, so the next keystroke lands there.
-    editor.view.focus()
+    back()
   }
-  const addImage = async () => {
-    const f = await pickFile('image/*')
-    if (!f) return
-    try {
-      c().setImage({ src: await uploadImage(f), alt: f.name }).run()
-    } catch (e) {
-      toast(e.message, 'error')
-    }
-  }
-  const clearFormatting = () => {
-    // Formatting only: comments and suggestions on the text stay.
-    const chain = c()
-    for (const name of Object.keys(editor.schema.marks)) if (!['comment', 'ins', 'del', 'fmt'].includes(name)) chain.unsetMark(name)
-    chain.clearNodes().run()
-  }
+  const font = style.fontFamily || ''
+  const size = style.fontSize ? parseFloat(style.fontSize) : ''
+  const align = aligns.find(([k]) => editor.isActive({ textAlign: k })) || aligns[0]
   const inTable = on('table')
   if (mode === 'view') {
     return (
@@ -370,6 +382,18 @@ function Toolbar({ editor, mode, role, onMode, onComment }) {
         <option value="h3">Heading 3</option>
       </select>
       <span class="sep" />
+      <select class="select tb-font" aria-label="Font" value={font} style={font ? { fontFamily: font } : undefined}
+        onChange={(e) => { e.target.value ? editor.chain().setFontFamily(e.target.value).run() : editor.chain().unsetFontFamily().run(); back() }}>
+        {fonts.map(([css, name]) => <option key={name} value={css} style={css ? { fontFamily: css } : undefined}>{name}</option>)}
+        {font && !fonts.some(([css]) => css === font) && <option value={font}>{font.split(',')[0].replace(/"/g, '')}</option>}
+      </select>
+      <select class="select tb-size" aria-label="Font size" value={size}
+        onChange={(e) => { e.target.value ? editor.chain().setFontSize(e.target.value + 'pt').run() : editor.chain().unsetFontSize().run(); back() }}>
+        <option value="">11.5</option>
+        {fontSizes.map((n) => <option key={n} value={n}>{n}</option>)}
+        {size && !fontSizes.includes(size) && <option value={size}>{size}</option>}
+      </select>
+      <span class="sep" />
       <IconButton icon={Bold} label="Bold" active={on('bold')} onClick={() => c().toggleBold().run()} />
       <IconButton icon={Italic} label="Italic" active={on('italic')} onClick={() => c().toggleItalic().run()} />
       <IconButton icon={Underline} label="Underline" active={on('underline')} onClick={() => c().toggleUnderline().run()} />
@@ -380,47 +404,74 @@ function Toolbar({ editor, mode, role, onMode, onComment }) {
       <Popover icon={Highlighter} label="Highlight">
         <Swatches colors={markColors} clear="No highlight" onPick={(col) => (col ? c().setHighlight({ color: col }).run() : c().unsetHighlight().run())} />
       </Popover>
-      <IconButton icon={Link2} label="Link" active={on('link')} onClick={() => setLink(editor.getAttributes('link').href || '')} />
       <span class="sep" />
-      <IconButton icon={List} label="Bulleted list" active={on('bulletList')} onClick={() => c().toggleBulletList().run()} />
-      <IconButton icon={ListOrdered} label="Numbered list" active={on('orderedList')} onClick={() => c().toggleOrderedList().run()} />
-      <IconButton icon={ListChecks} label="Checklist" active={on('taskList')} onClick={() => c().toggleTaskList().run()} />
-      <span class="sep" />
-      <IconButton icon={AlignLeft} label="Align left" active={editor.isActive({ textAlign: 'left' })} onClick={() => c().setTextAlign('left').run()} />
-      <IconButton icon={AlignCenter} label="Centre" active={editor.isActive({ textAlign: 'center' })} onClick={() => c().setTextAlign('center').run()} />
-      <IconButton icon={AlignRight} label="Align right" active={editor.isActive({ textAlign: 'right' })} onClick={() => c().setTextAlign('right').run()} />
-      <span class="sep" />
-      <IconButton icon={Quote} label="Quote" active={on('blockquote')} onClick={() => c().toggleBlockquote().run()} />
-      <IconButton icon={Code2} label="Code block" active={on('codeBlock')} onClick={() => c().toggleCodeBlock().run()} />
-      <IconButton icon={Minus} label="Divider" onClick={() => c().setHorizontalRule().run()} />
-      <IconButton icon={ImagePlus} label="Image" onClick={addImage} />
+      <IconButton icon={Link2} label="Link" active={on('link')} onClick={a.link} />
+      <IconButton icon={ImagePlus} label="Image" onClick={a.image} />
       <Menu trigger={<IconButton icon={Table} label="Table" active={inTable} />} items={inTable ? [
-        { label: 'Add row below', icon: Rows3, onSelect: () => c().addRowAfter().run() },
-        { label: 'Add column right', icon: Columns3, onSelect: () => c().addColumnAfter().run() },
+        { label: 'Insert row below', icon: Rows3, onSelect: () => c().addRowAfter().run() },
+        { label: 'Insert column right', icon: Rows3, onSelect: () => c().addColumnAfter().run() },
         { divider: true },
         { label: 'Delete row', onSelect: () => c().deleteRow().run() },
         { label: 'Delete column', onSelect: () => c().deleteColumn().run() },
-        { label: 'Delete table', icon: Trash2, danger: true, onSelect: () => c().deleteTable().run() },
-      ] : [
-        { label: 'Insert 3 × 3 table', icon: Table, onSelect: () => c().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
-        { label: 'Insert 5 × 4 table', icon: Table, onSelect: () => c().insertTable({ rows: 5, cols: 4, withHeaderRow: true }).run() },
-      ]} />
+        { label: 'Delete table', danger: true, onSelect: () => c().deleteTable().run() },
+      ] : tableSizes.map(([cols, rows]) => ({ label: `Insert ${cols} × ${rows} table`, icon: Table, onSelect: () => c().insertTable({ rows, cols, withHeaderRow: true }).run() }))} />
+      <IconButton icon={Superscript} label="Footnote" onClick={a.footnote} />
+      <IconButton icon={MessageSquarePlus} label="Comment" disabled={editor.state.selection.empty} onClick={a.comment} />
       <span class="sep" />
-      <IconButton icon={RemoveFormatting} label="Clear formatting" onClick={clearFormatting} />
-      <span class="sep" />
-      <IconButton icon={MessageSquarePlus} label="Comment" disabled={editor.state.selection.empty} onClick={onComment} />
+      <Menu trigger={<IconButton icon={align[2]} label="Align" />} items={aligns.map(([k, label, Icon]) => ({ label, icon: Icon, onSelect: () => c().setTextAlign(k).run() }))} />
+      <Menu trigger={<IconButton icon={Rows3} label="Line spacing" />} items={lineHeights.map((v) => ({ label: lineLabel(v) + ((para.lineHeight || 1.15) === v ? '  ✓' : ''), onSelect: () => c().setLineHeight(v).run() }))} />
+      <IconButton icon={List} label="Bulleted list" active={on('bulletList')} onClick={() => c().toggleBulletList().run()} />
+      <IconButton icon={ListOrdered} label="Numbered list" active={on('orderedList')} onClick={() => c().toggleOrderedList().run()} />
+      <IconButton icon={ListChecks} label="Checklist" active={on('taskList')} onClick={() => c().toggleTaskList().run()} />
+      <IconButton icon={IndentDecrease} label="Decrease indent" onClick={() => c().outdent().run()} />
+      <IconButton icon={IndentIncrease} label="Increase indent" onClick={() => c().indent().run()} />
+      <IconButton icon={RemoveFormatting} label="Clear formatting" onClick={a.clearFormatting} />
       <ModeSelect mode={mode} role={role} onMode={onMode} />
-      {link !== null && (
-        <Modal title="Link" onClose={() => setLink(null)} footer={<>
-          {editor.isActive('link') && <Button kind="danger" onClick={() => { c().unsetLink().run(); setLink(null) }}>Remove</Button>}
-          <Button kind="primary" onClick={() => { link.trim() ? c().extendMarkRange('link').setLink({ href: /^[a-z]+:/i.test(link.trim()) ? link.trim() : 'https://' + link.trim() }).run() : c().unsetLink().run(); setLink(null) }}>Apply</Button>
-        </>}>
-          <input class="input" autofocus placeholder="https://" value={link} onInput={(e) => setLink(e.target.value)} />
-        </Modal>
-      )}
     </div>
   )
 }
+
+// The picture the selection is on, if it is on one.
+function selectedPicture(editor) {
+  const sel = editor?.state.selection
+  if (!(sel instanceof NodeSelection)) return null
+  const n = sel.node
+  if (n.type.name !== 'image' && n.type.name !== 'inlineImage') return null
+  return { pos: sel.from, inline: n.type.name === 'inlineImage', wrap: n.attrs.wrap || 'break', align: n.attrs.align || 'left', width: n.attrs.width || null }
+}
+
+function selectedFootnote(editor) {
+  const sel = editor?.state.selection
+  return sel instanceof NodeSelection && sel.node.type.name === 'footnote' ? sel.from : null
+}
+
+const pagePx = (mm) => Math.round(mm * MM)
+
+// The page as it is set up: its paper, margins, header and footer. The text
+// runs on as one long page on screen; on paper it breaks into pages.
+function Page({ page, title, children }) {
+  const { w, h } = pageSize(page)
+  const style = {
+    width: pagePx(w) + 'px', minHeight: pagePx(h) + 'px',
+    padding: `${pagePx(page.top)}px ${pagePx(page.right)}px ${pagePx(page.bottom)}px ${pagePx(page.left)}px`,
+  }
+  // Header and footer sit in the middle of their margin, as on paper.
+  const band = (text, al, edge, margin) => text && (
+    <div class={'page-band ' + edge} aria-hidden="true"
+      style={{ [edge]: Math.max(6, pagePx(Math.min(12.5, margin / 2)) - 9) + 'px', left: pagePx(page.left) + 'px', right: pagePx(page.right) + 'px', textAlign: al }}>
+      {fillTokens(text, { page: '#', pages: '#', title: title || 'Untitled' })}
+    </div>
+  )
+  return (
+    <div class="doc-page" style={style}>
+      {band(page.header, page.headerAlign, 'top', page.top)}
+      {children}
+      {band(page.footer, page.footerAlign, 'bottom', page.bottom)}
+    </div>
+  )
+}
+
+const COUNT_KEY = 'os:doc-wordcount'
 
 export default function EditorView({ id }) {
   const doc = docs.value.find((d) => d.id === id)
@@ -436,7 +487,13 @@ export default function EditorView({ id }) {
   const [pending, setPending] = useState(null) // { id, quote }: a comment being written
   const [history, setHistory] = useState(null) // the version panel, once asked for
   const [past, setPast] = useState(null) // { version, json, ydoc }: a past version on screen
+  const [dialog, setDialog] = useState(null) // 'page' | 'count' | 'keys'
+  const [find, setFind] = useState(null) // { replace }: the find bar, when open
+  const [link, setLink] = useState(null) // the link being edited
+  const [showCount, setShowCount] = useState(() => localStorage.getItem(COUNT_KEY) !== 'off')
   const pastHost = useRef()
+  const main = useRef()
+  const titleInput = useRef()
   const caret = useRef('')
   const me = user.value
 
@@ -506,6 +563,7 @@ export default function EditorView({ id }) {
   const canWrite = !!s && s.state.canEdit && role !== 'view'
   const mode = s?.state.mode
   const railOpen = !!editor && !history && (!!pending || (rail ?? (items.open.length > 0 && matchMedia('(min-width: 1101px)').matches)))
+  const editable = canWrite && mode !== 'view' && !past
 
   const comment = () => {
     if (!canWrite || mode === 'view') return
@@ -517,12 +575,6 @@ export default function EditorView({ id }) {
     if (!posted && pending) unmarkThread(editor, pending.id)
     setPending(null)
     editor.view.focus() // at once, so typing can carry straight on
-  }
-  const keys = (e) => {
-    if (e.code === 'KeyM' && e.altKey && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault()
-      comment()
-    }
   }
 
   const pastDoc = (state) => {
@@ -548,6 +600,7 @@ export default function EditorView({ id }) {
     const history = yUndoPluginKey.getState(editor.state)?.undoManager
     history?.stopCapturing()
     adoptThreads(s.ydoc, old.ydoc)
+    adoptPage(s.ydoc, old.ydoc)
     editor.chain().setMeta(suggestKey, { skip: true }).setContent(old.json).run()
     history?.stopCapturing()
     old.ydoc.destroy()
@@ -557,55 +610,150 @@ export default function EditorView({ id }) {
   const unique = [...new Map(others.map((u) => [u.id, u])).values()]
   const status = !s ? '' : !s.state.online ? 'Offline · saved on this device' : s.saved() ? 'Saved' : 'Saving…'
   const title = doc.title
+  const page = s ? readPage(s.ydoc) : pageDefaults
+  const shownPage = past ? readPage(past.ydoc) : page
 
-  const exportAs = async (fmt) => {
+  const download = async (fmt) => {
     try {
-      const body = await inlineImages(editor.getHTML())
-      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${(title || 'Untitled').replace(/</g, '')}</title></head><body>${body}</body></html>`
+      const target = fmt === 'md' ? 'markdown' : fmt === 'html' ? 'html' : 'word'
+      const html = await inlinePictures(exportCopy(editor.getHTML(), { page, title: title || 'Untitled', target }))
+      const name = `${title || 'Untitled'}.${fmt}`
+      if (fmt === 'html') return saveFile(new Blob([html], { type: 'text/html' }), name)
       const res = await convert('html', fmt, new Blob([html]))
-      download(await res.blob(), `${title || 'Untitled'}.${fmt}`)
+      saveFile(await res.blob(), name)
     } catch (e) {
       toast(e.message, 'error')
     }
   }
+  const addImage = async () => {
+    const f = await pickFile('image/*')
+    if (!f) return
+    try {
+      editor.chain().focus().setImage({ src: await uploadImage(f), alt: f.name }).run()
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+  }
+  const clearFormatting = () => {
+    // Formatting only: comments and suggestions on the text stay.
+    const chain = editor.chain().focus()
+    for (const name of Object.keys(editor.schema.marks)) if (!['comment', 'ins', 'del', 'fmt'].includes(name)) chain.unsetMark(name)
+    chain.clearNodes().command(({ tr, state }) => {
+      state.doc.nodesBetween(state.selection.from, state.selection.to, (node, pos) => {
+        if (node.attrs.lineHeight || node.attrs.indent) tr.setNodeMarkup(pos, undefined, { ...node.attrs, lineHeight: null, indent: null })
+      })
+      return true
+    }).run()
+  }
+  const footnote = () => {
+    if (!editable) return
+    const at = editor.state.selection.to
+    editor.chain().focus().setTextSelection(at).insertFootnote('').setNodeSelection(at).run()
+  }
+  const clipboard = async (kind) => {
+    editor.view.focus()
+    if (kind !== 'paste') {
+      document.execCommand(kind)
+      return
+    }
+    try {
+      const [item] = await navigator.clipboard.read()
+      if (item.types.includes('text/html')) editor.view.pasteHTML(await (await item.getType('text/html')).text())
+      else editor.view.pasteText(await (await item.getType('text/plain')).text())
+    } catch {
+      toast(`Your browser keeps the clipboard to itself here. Press ${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+'}V to paste.`)
+    }
+  }
+  const setCount = (on) => {
+    setShowCount(on)
+    localStorage.setItem(COUNT_KEY, on ? 'on' : 'off')
+  }
+  const picture = editable ? selectedPicture(editor) : null
+  const fnPos = editor && !past ? selectedFootnote(editor) : null
+  const imageLayout = (change) => setImageLayout(editor, change)
+
+  const actions = {
+    doc, editor, canEdit, canWrite, role, mode, railOpen, showCount, picture,
+    share: () => setShare(true),
+    history: openHistory,
+    download,
+    print: () => window.print(),
+    pageSetup: () => setDialog('page'),
+    rename: () => titleInput.current?.select(),
+    trash: () => { trashDoc(doc); navigate('/docs') },
+    clipboard,
+    find: (replace) => setFind({ replace }),
+    setMode: (m) => s.setMode(m),
+    toggleRail: () => { setHistory(null); setPast(null); setRail(!railOpen) },
+    toggleCount: () => setCount(!showCount),
+    image: addImage,
+    link: () => setLink(editor.getAttributes('link').href || ''),
+    footnote,
+    comment,
+    clearFormatting,
+    imageLayout,
+    wordCount: () => setDialog('count'),
+    shortcuts: () => setDialog('keys'),
+  }
+
+  const keys = (e) => {
+    const mod = e.metaKey || e.ctrlKey
+    if (!mod || !editor) return
+    const take = (fn) => {
+      e.preventDefault()
+      fn()
+    }
+    if (e.code === 'KeyM' && e.altKey) take(comment)
+    else if (e.code === 'KeyF' && e.altKey) take(footnote)
+    else if (e.code === 'KeyF' && !e.shiftKey) take(() => setFind({ replace: false }))
+    else if (e.code === 'KeyH' && e.shiftKey && e.altKey) canEdit && take(openHistory)
+    else if (e.code === 'KeyH' && (e.shiftKey || !navigator.platform.includes('Mac'))) take(() => setFind({ replace: true }))
+    else if (e.code === 'KeyC' && e.shiftKey) take(() => setDialog('count'))
+    else if (e.code === 'KeyK' && editable) take(actions.link)
+    else if (e.code === 'Backslash' && editable) take(clearFormatting)
+  }
+
+  const pageCSS = `@media print { ${printCSS(shownPage, title || 'Untitled')} }`
 
   return (
     <div class="doc-view" style={{ position: 'relative' }} onKeyDown={keys}>
-      <div class="doc-bar">
+      <style>{pageCSS}</style>
+      <div class="doc-bar with-menus">
         <IconButton icon={ArrowLeft} label="All docs" onClick={() => navigate('/docs')} />
-        <input class="doc-title" aria-label="Title" placeholder="Untitled" value={title} disabled={!canEdit}
-          onInput={(e) => { upsertDoc({ ...doc, title: e.target.value }); rename(doc, e.target.value) }}
-          onKeyDown={(e) => e.key === 'Enter' && editor?.commands.focus('start')} />
-        <span class="save-state">{status}</span>
+        <div class="doc-head">
+          <div class="doc-head-top">
+            <input class="doc-title" aria-label="Title" placeholder="Untitled" value={title} disabled={!canEdit} ref={titleInput}
+              onInput={(e) => { upsertDoc({ ...doc, title: e.target.value }); rename(doc, e.target.value) }}
+              onKeyDown={(e) => e.key === 'Enter' && editor?.commands.focus('start')} />
+            <span class="save-state">{status}</span>
+          </div>
+          <MenuBar menus={docMenus(actions)} />
+        </div>
         <span class="grow" />
         <span class="presence">{unique.slice(0, 5).map((u) => <span key={u.id} title={u.name}><Avatar name={u.name} id={u.id} size={28} /></span>)}</span>
         {editor && (
           <span class="rv-count">
-            <IconButton icon={MessageSquare} label="Comments" active={railOpen} onClick={() => { setHistory(null); setPast(null); setRail(!railOpen) }} />
+            <IconButton icon={MessageSquare} label="Comments" active={railOpen} onClick={actions.toggleRail} />
             {items.open.length > 0 && <span class="count">{items.open.length}</span>}
           </span>
         )}
         <Button icon={Users} kind={doc.access === 'org' || doc.shares?.length ? 'default' : 'primary'} onClick={() => setShare(true)}>Share</Button>
-        <Menu align="right" trigger={<IconButton icon={MoreHorizontal} label="More" />} items={[
-          canEdit && { label: 'Version history', icon: History, onSelect: openHistory },
-          { label: 'Print or save as PDF', icon: Printer, onSelect: () => window.print() },
-          { divider: true },
-          { label: 'Download as Word (.docx)', icon: FileDown, onSelect: () => exportAs('docx') },
-          { label: 'Download as OpenDocument (.odt)', icon: FileDown, onSelect: () => exportAs('odt') },
-          { label: 'Download as Markdown (.md)', icon: FileDown, onSelect: () => exportAs('md') },
-          doc.role === 'owner' && { divider: true },
-          doc.role === 'owner' && { label: 'Move to trash', icon: Trash2, danger: true, onSelect: () => { trashDoc(doc); navigate('/docs') } },
-        ]} />
       </div>
       {past && VersionBar && <VersionBar version={past.version} onBack={() => setPast(null)} onRestore={() => restore(past.version, past.state).then(() => toast('Version restored'), (e) => toast(e.message, 'error'))} />}
-      {editor && canWrite && !past && <Toolbar editor={editor} tick={tick} mode={mode} role={role} onMode={s.setMode} onComment={comment} />}
+      {editor && canWrite && !past && <Toolbar editor={editor} tick={tick} mode={mode} role={role} onMode={s.setMode} a={actions} />}
       <div class="doc-body">
-        <div class="doc-main">
+        <div class="doc-main" ref={main}>
           <div class={cx('doc-scroll', mode === 'view' && 'clean')} onMouseDown={(e) => e.target === e.currentTarget && !past && editor?.commands.focus('end')}>
-            <div ref={host} style={past ? { display: 'none' } : undefined} />
-            <div ref={pastHost} />
+            <Page page={shownPage} title={title}>
+              <div ref={host} style={past ? { display: 'none' } : undefined} />
+              <div ref={pastHost} />
+            </Page>
           </div>
-          {editor && !past && <div class="doc-foot">{editor.storage.characterCount.words()} words</div>}
+          {editor && !past && showCount && <button type="button" class="doc-foot" onClick={() => setDialog('count')}>{editor.storage.characterCount.words()} words</button>}
+          {editor && find && <FindBar editor={editor} tick={tick} replace={find.replace} canReplace={editable} onClose={() => setFind(null)} />}
+          {editor && fnPos !== null && <FootnoteBox key={fnPos} editor={editor} pos={fnPos} box={main.current} canEdit={editable}
+            onDone={(keep) => { if (keep) editor.chain().focus().setTextSelection(fnPos + 1).run() }} />}
+          {editor && picture && <PictureBar editor={editor} picture={picture} box={main.current} onLayout={imageLayout} />}
         </div>
         {HistoryPanel
           ? <HistoryPanel doc={doc} viewing={past?.version.id || null} onView={viewPast} onRestore={restore} onClose={() => { setHistory(null); setPast(null) }} />
@@ -613,6 +761,18 @@ export default function EditorView({ id }) {
       </div>
       {editor && <ReviewStyle items={items} active={active} pending={pending?.id} />}
       {share && <ShareDialog doc={doc} onClose={() => setShare(false)} />}
+      {dialog === 'page' && s && <PageSetup ydoc={s.ydoc} title={title} readOnly={!editable} onClose={() => setDialog(null)} />}
+      {dialog === 'count' && editor && <WordCount editor={editor} show={showCount} onShow={setCount} onClose={() => setDialog(null)} />}
+      {dialog === 'keys' && <Shortcuts onClose={() => setDialog(null)} />}
+      {link !== null && editor && (
+        <Modal title="Link" onClose={() => setLink(null)} footer={<>
+          {editor.isActive('link') && <Button kind="danger" onClick={() => { editor.chain().focus().unsetLink().run(); setLink(null) }}>Remove</Button>}
+          <Button kind="primary" onClick={() => { const v = link.trim(); v ? editor.chain().focus().extendMarkRange('link').setLink({ href: /^[a-z]+:/i.test(v) ? v : 'https://' + v }).run() : editor.chain().focus().unsetLink().run(); setLink(null) }}>Apply</Button>
+        </>}>
+          <input class="input" autofocus placeholder="https://" value={link} onInput={(e) => setLink(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.closest('.modal')?.querySelector('footer .btn:last-child')?.click()} />
+        </Modal>
+      )}
     </div>
   )
 }

@@ -119,8 +119,11 @@ export function pageMeta(p) {
 export function pageFromHTML(html) {
   const m = /<meta name="os-page" content="([^"]*)"/.exec(html || '')
   if (!m) return null
+  const named = { quot: '"', lt: '<', gt: '>', apos: "'", amp: '&' }
+  const text = m[1].replace(/&(#x[0-9a-f]+|#\d+|quot|lt|gt|apos|amp);/gi, (_, e) =>
+    e[0] === '#' ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : +e.slice(1)) : named[e.toLowerCase()])
   try {
-    return cleanPage(JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')))
+    return cleanPage(JSON.parse(text))
   } catch {
     return null
   }

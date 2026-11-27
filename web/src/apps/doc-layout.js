@@ -248,14 +248,15 @@ export const Footnote = Node.create({
   selectable: true,
   addAttributes() {
     return {
-      text: { default: '', parseHTML: (el) => el.getAttribute('data-footnote') || '', renderHTML: (a) => ({ 'data-footnote': a.text || '' }) },
+      text: { default: '', parseHTML: (el) => el.getAttribute('data-footnote') ?? (pandocNote(el) || {}).text ?? '', renderHTML: (a) => ({ 'data-footnote': a.text || '' }) },
     }
   },
   parseHTML() {
+    // Ahead of the link mark, which would otherwise take pandoc's numbers.
     return [
-      { tag: 'sup[data-footnote]' },
-      { tag: 'a.footnote-ref', getAttrs: pandocNote },
-      { tag: 'a[role="doc-noteref"]', getAttrs: pandocNote },
+      { tag: 'sup[data-footnote]', priority: 1100 },
+      { tag: 'a.footnote-ref', getAttrs: pandocNote, priority: 1100 },
+      { tag: 'a[role="doc-noteref"]', getAttrs: pandocNote, priority: 1100 },
       // The list of notes itself is read through the numbers above.
       { tag: 'section.footnotes', ignore: true },
       { tag: 'section[role="doc-endnotes"]', ignore: true },
