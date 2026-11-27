@@ -183,11 +183,20 @@ const cell = (col, row) => ({ x: 46 + 90 * col - 45, y: 24 + 25 * row - 12 }) //
     }
 
     // Leave the account as it was found: remove what this run created.
-    await A.goto(BASE + '/')
-    await A.waitForSelector('.rail')
-    await A.evaluate(async (made) => {
-      for (const path of made) await fetch(path, { method: 'DELETE' })
+    // From outside the app: a page still open on what is removed would ask
+    // for it again and log the 404 as a problem.
+    // Files, which shows neither the meeting nor the documents' contents.
+    for (const p of b.pages) await p.goto(BASE + '/files')
+    await A.waitForSelector('.page-head')
+    const failed = await A.evaluate(async (made) => {
+      const bad = []
+      for (const path of made) {
+        const res = await fetch(path, { method: 'DELETE' })
+        if (!res.ok) bad.push(`${path} ${res.status}`)
+      }
+      return bad
     }, created)
+    if (failed.length) throw new Error('cleanup failed: ' + failed.join(', '))
     ok(`cleaned up ${created.length} test item(s)`)
 
     if (problems.length) throw new Error('problems during the run:\n' + problems.join('\n'))
