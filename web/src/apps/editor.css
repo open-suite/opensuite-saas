@@ -64,7 +64,7 @@
 .toc-item:hover { text-decoration: underline !important; }
 .toc-empty { color: var(--muted); font-size: 13.5px; }
 .paper { counter-reset: footnote; }
-.paper sup.fn-ref { counter-increment: footnote; color: var(--accent); font-weight: 600; cursor: pointer; padding: 0 1px; }
+.paper sup.fn-ref { counter-increment: footnote; color: var(--accent); font-weight: 600; cursor: pointer; padding: 0 1px; font-size: 0.72em; line-height: 0; vertical-align: 0.5em; }
 .paper sup.fn-ref::after { content: counter(footnote); }
 .paper sup.fn-ref.ProseMirror-selectednode { background: color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 3px; }
 .paper del.sug-del sup.fn-ref, .paper .sug-del .fn-ref { counter-increment: none; }

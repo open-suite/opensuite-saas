@@ -72,8 +72,11 @@ export const FindReplace = Extension.create({
         if (!f.matches.length) return false
         const head = state.selection.from
         let i = f.current
+        const shown = f.matches[i]
+        const onIt = shown && state.selection.from === shown.from && state.selection.to === shown.to
         if (i < 0) i = dir > 0 ? f.matches.findIndex((m) => m.from >= head) : f.matches.findLastIndex((m) => m.to <= head)
-        else i += dir
+        // The match marked as current but not yet gone to is the first stop.
+        else if (onIt || dir < 0) i += dir
         i = ((i % f.matches.length) + f.matches.length) % f.matches.length
         if (i < 0) i = 0
         const m = f.matches[i]
@@ -110,7 +113,9 @@ export const FindReplace = Extension.create({
           if (!next.query) return next.matches.length || next.current !== -1 ? { ...next, matches: [], current: -1 } : next
           if (meta?.reset || tr.docChanged) {
             const matches = findMatches(state.doc, next.query, next)
-            let current = meta?.reset ? -1 : next.current
+            let current = next.current
+            // A new search marks the first match from the cursor on.
+            if (meta?.reset) current = matches.length ? Math.max(0, matches.findIndex((m) => m.from >= state.selection.from)) : -1
             if (meta?.after != null) current = matches.findIndex((m) => m.from >= meta.after)
             if (current >= matches.length) current = matches.length - 1
             next = { ...next, matches, current }
