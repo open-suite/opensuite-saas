@@ -429,12 +429,14 @@ export class Sheet {
 
   // Screen position of a column's left edge or a row's top edge. Frozen
   // columns and rows stay put; the rest move with the scroll.
+  // paint() holds the scroll position in sx/sy while it draws: reading it
+  // from the DOM for every cell made opening a sheet measurably slower.
   colLeft(c) {
-    return HW + this.colX[Math.min(c - 1, this.C)] - (c > this.fc ? this.scroll.scrollLeft : 0)
+    return HW + this.colX[Math.min(c - 1, this.C)] - (c > this.fc ? (this.sx ?? this.scroll.scrollLeft) : 0)
   }
 
   rowTop(r) {
-    return HH + this.rowY[Math.min(r - 1, this.R)] - (r > this.fr ? this.scroll.scrollTop : 0)
+    return HH + this.rowY[Math.min(r - 1, this.R)] - (r > this.fr ? (this.sy ?? this.scroll.scrollTop) : 0)
   }
 
   rect(row, col) {
@@ -596,6 +598,16 @@ export class Sheet {
   // and selection, clipped to its own area.
   paint() {
     if (!this.model || !this.colX) return
+    this.sx = this.scroll.scrollLeft
+    this.sy = this.scroll.scrollTop
+    try {
+      this.paintAll()
+    } finally {
+      this.sx = this.sy = undefined
+    }
+  }
+
+  paintAll() {
     const ctx = this.ctx
     const T = this.theme
     const dpr = window.devicePixelRatio || 1

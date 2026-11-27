@@ -473,6 +473,24 @@ function Page({ page, title, children }) {
 
 const COUNT_KEY = 'os:doc-wordcount'
 
+// The running word count reads the whole document, so it is counted when the
+// browser is idle rather than on every change: counting during each render
+// made opening a document measurably slower.
+function WordFoot({ editor, tick, onClick }) {
+  const [words, setWords] = useState(null)
+  useEffect(() => {
+    const run = () => setWords(editor.storage.characterCount.words())
+    if (!window.requestIdleCallback) {
+      const t = setTimeout(run, 100)
+      return () => clearTimeout(t)
+    }
+    const t = requestIdleCallback(run, { timeout: 500 })
+    return () => cancelIdleCallback(t)
+  }, [editor, tick])
+  if (words == null) return null
+  return <button type="button" class="doc-foot" onClick={onClick}>{words} words</button>
+}
+
 export default function EditorView({ id }) {
   const doc = docs.value.find((d) => d.id === id)
   const host = useRef()
@@ -749,7 +767,7 @@ export default function EditorView({ id }) {
               <div class="doc-past" ref={pastHost} />
             </Page>
           </div>
-          {editor && !past && showCount && <button type="button" class="doc-foot" onClick={() => setDialog('count')}>{editor.storage.characterCount.words()} words</button>}
+          {editor && !past && showCount && <WordFoot editor={editor} tick={tick} onClick={() => setDialog('count')} />}
           {editor && find && <FindBar editor={editor} tick={tick} replace={find.replace} canReplace={editable} onClose={() => setFind(null)} />}
           {editor && fnPos !== null && <FootnoteBox key={fnPos} editor={editor} pos={fnPos} box={main.current} canEdit={editable}
             onDone={(keep) => { if (keep) editor.chain().focus().setTextSelection(fnPos + 1).run() }} />}

@@ -29,7 +29,8 @@
 //   </div>
 //
 // An item is { label, icon?, hint?, onSelect?, disabled?, checked?, danger?,
-// items? } or { divider: true } or { heading }. Falsy entries are skipped, so
+// items? } or { divider: true } or { heading }. `disabled` may be a function
+// when it is costly to work out; it is then called only while shown. Falsy entries are skipped, so
 // `canEdit && {...}` works. `hint` is the shortcut shown on the right; build it
 // with keys('Mod+B'), which reads ⌘B on a Mac and Ctrl+B elsewhere. The bar
 // does not bind shortcuts itself; the editor already handles its keys.
@@ -52,7 +53,10 @@ export function keys(combo) {
   return parts.map((p) => (p === 'Mod' ? 'Ctrl' : p)).join('+')
 }
 
-const live = (items) => (items || []).filter(Boolean)
+// `disabled` may be a function, asked only when its menu is shown: an editor
+// re-renders on every change, and working out whether, say, Undo is possible
+// on each one made opening a document slower.
+const live = (items) => (items || []).filter(Boolean).map((it) => (typeof it.disabled === 'function' ? { ...it, disabled: it.disabled() } : it))
 const actionable = (it) => it && !it.divider && !it.heading && !it.disabled
 
 // Every item that does something, with the path to it, for the search box.

@@ -47,8 +47,8 @@ export function docMenus(a) {
       a.doc.role === 'owner' && { label: 'Move to trash', icon: Trash2, danger: true, onSelect: a.trash },
     ] },
     { label: 'Edit', items: [
-      { label: 'Undo', icon: Undo2, hint: keys('Mod+Z'), disabled: !can || !e.can().undo(), onSelect: () => c().undo().run() },
-      { label: 'Redo', icon: Redo2, hint: keys('Mod+Shift+Z'), disabled: !can || !e.can().redo(), onSelect: () => c().redo().run() },
+      { label: 'Undo', icon: Undo2, hint: keys('Mod+Z'), disabled: () => !can || !e.can().undo(), onSelect: () => c().undo().run() },
+      { label: 'Redo', icon: Redo2, hint: keys('Mod+Shift+Z'), disabled: () => !can || !e.can().redo(), onSelect: () => c().redo().run() },
       { divider: true },
       { label: 'Cut', icon: Scissors, hint: keys('Mod+X'), disabled: !can || e.state.selection.empty, onSelect: () => a.clipboard('cut') },
       { label: 'Copy', icon: Copy, hint: keys('Mod+C'), disabled: !e || e.state.selection.empty, onSelect: () => a.clipboard('copy') },
