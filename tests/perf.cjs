@@ -80,6 +80,10 @@ function report(label, samples, budget = BUDGET) {
       await click('a[href="/files"]', `document.querySelector('.page-head')`)
       await click('a[href="/files/recent"]', `document.querySelector('a.list-row[href^="/d/"]') && document.querySelector('a.list-row[href^="/s/"]')`)
     }
+    // The account's list settles first: a document another check deleted a
+    // moment ago can still be listed from the device's copy until then.
+    await toRecent()
+    await page.waitForTimeout(3000)
     await toRecent()
     const docHref = await page.getAttribute('a.list-row[href^="/d/"]', 'href')
     const sheetHref = await page.getAttribute('a.list-row[href^="/s/"]', 'href')

@@ -161,13 +161,19 @@ func (s *Server) mailSetup(ctx context.Context, base string) error {
 		jmapCall{"x:Http/set", map[string]any{"update": map[string]any{"singleton": map[string]any{
 			"rateLimitAuthenticated": map[string]int{"count": 1000000, "period": 60000},
 			"rateLimitAnonymous":     map[string]int{"count": 1000000, "period": 60000}}}}},
+		// The engine allows 4 requests at once per account by default, and
+		// answers a fifth with 400 (urn:ietf:params:jmap:error:limit). One
+		// person's Mail syncs their own mailbox and every shared inbox they
+		// are in at once, all as them, so 4 is reached right after a reload.
+		jmapCall{"x:Jmap/set", map[string]any{"update": map[string]any{"singleton": map[string]any{
+			"maxConcurrentRequests": 32, "maxConcurrentUploads": 8}}}},
 		jmapCall{"x:NetworkListener/query", map[string]any{}},
 	)
 	if err != nil {
 		return err
 	}
 	var q queryResult
-	json.Unmarshal(res[3].Args, &q)
+	json.Unmarshal(res[4].Args, &q)
 	if len(q.IDs) == 0 {
 		lis := func(proto, bind string, implicit bool) map[string]any {
 			return map[string]any{"name": proto + bind, "protocol": proto, "bind": map[string]bool{bind: true}, "implicitTls": implicit}
