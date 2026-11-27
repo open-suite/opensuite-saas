@@ -335,6 +335,19 @@ index. The hello message is `peer, may write, index fresh`. 11 to 15 are free.
 
 ## Gotchas already paid for
 
+- Spreadsheet filters, filter views, data validation, pivot tables, clipped
+  text and conditional formatting live in a hidden `_meta_` sheet
+  (`web/src/apps/sheet-meta.js`), as charts do in `_charts_`. Do not use the
+  engine's own conditional formatting for live sheets: IronCalc 0.9's
+  `addConditionalFormatting` diff reaches other people without the rule's
+  format (the dxf is not in the diff), so colours vanish everywhere but on the
+  author's screen. Excel export writes our rules as engine rules on a private
+  copy (`sheet-xlsx.js`), where that bug does not bite.
+- The engine keeps one undo step per call; `Sheet.act` counts calls through a
+  proxy so Undo takes back a whole action (a sort is one paste per row).
+  New read-only engine methods must match `READS` in `sheet-core.js`, or
+  Undo will take back too much.
+
 - `@preact/signals` makes a component that has hook state or reads signals
   re-render only when its props, state or signals change. A component that
   reads a mutable object at render time (the editor, the sheet controller)
