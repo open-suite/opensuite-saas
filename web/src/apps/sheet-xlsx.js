@@ -7,7 +7,7 @@ import JSZip from 'jszip'
 import { Model } from '@ironcalc/wasm-xlsx'
 import { chartSheetsOf } from './sheet-charts.js'
 import { colName, extent } from './sheet-data.js'
-import { metaSheets, readMeta, hiddenRows, columnValues, setFilter, setValidation, filterRange, MAXR } from './sheet-meta.js'
+import { metaSheets, readMeta, hiddenRows, columnValues, setFilter, setValidation, filterRange, engineCf, adoptEngineCf, MAXR } from './sheet-meta.js'
 import { parseRange } from './sheet-charts.js'
 
 const xml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -121,6 +121,9 @@ export async function exportXlsx(model) {
     for (const e of extra.values()) {
       for (const r of e.filter?.hidden || []) copy.setRowsHidden(e.filter.ref.sheet, r, r, true)
     }
+    // Our conditional formatting goes in as Excel's own rules; made here, in
+    // one workbook, they keep their colours (see sheet-meta.js).
+    engineCf(copy)
     const drop = [...new Set([...chartSheetsOf(copy), ...metaSheets(copy)])].sort((a, b) => b - a)
     for (const i of drop) copy.deleteSheet(i)
     bytes = copy.toXlsx()
@@ -128,6 +131,10 @@ export async function exportXlsx(model) {
     copy.free()
   }
   if (!extra.size) return bytes
+  return addExtras(bytes, extra)
+}
+
+async function addExtras(bytes, extra) {
   const zip = await JSZip.loadAsync(bytes)
   const files = await sheetFiles(zip)
   for (const [name, e] of extra) {
@@ -161,6 +168,7 @@ const fromCfOp = Object.fromEntries(Object.entries(cfOps).map(([k, v]) => [v, k]
 // importFilters reads filters and data validation from an Excel file into a
 // workbook just made from it (Model.fromXlsx).
 export async function importExtras(m, bytes) {
+  adoptEngineCf(m)
   let zip
   try {
     zip = await JSZip.loadAsync(bytes)

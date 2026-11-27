@@ -378,6 +378,172 @@ export function clearValidation(m, ref) {
   }
 }
 
+// --- conditional formatting ---------------------------------------------------------
+//
+// { kind: 'cf', cond, a, b, style: { b, i, strike, color, fill } } or
+// { kind: 'cf', scale: { min, mid, max } } over a range. The engine has
+// conditional formatting of its own, but its edits reach other people
+// without their formatting (the rule's colours are not in the change it
+// sends), so rules live here and are drawn by the grid; Excel files carry
+// them as Excel rules (sheet-xlsx.js).
+
+export const cfConds = {
+  GreaterThan: 'Greater than', GreaterThanOrEqual: 'Greater than or equal to', LessThan: 'Less than', LessThanOrEqual: 'Less than or equal to',
+  Equal: 'Is equal to', NotEqual: 'Is not equal to', Between: 'Is between', NotBetween: 'Is not between',
+  Contains: 'Text contains', DoesNotContain: 'Text does not contain', BeginsWith: 'Text starts with', EndsWith: 'Text ends with', Equals: 'Text is exactly',
+  Blanks: 'Is empty', NotBlanks: 'Is not empty', DuplicateValues: 'Is a duplicate',
+}
+
+function cfTest(v, rule, dupes) {
+  const n = Number(rule.a)
+  const n2 = Number(rule.b)
+  const t = v.text.toLowerCase()
+  const a = String(rule.a ?? '').toLowerCase()
+  const num = !isNaN(v.num)
+  switch (rule.cond) {
+    case 'Blanks': return v.blank
+    case 'NotBlanks': return !v.blank
+    case 'Contains': return !v.blank && t.includes(a)
+    case 'DoesNotContain': return !t.includes(a)
+    case 'BeginsWith': return !v.blank && t.startsWith(a)
+    case 'EndsWith': return !v.blank && t.endsWith(a)
+    case 'Equals': return t === a
+    case 'GreaterThan': return num && v.num > n
+    case 'GreaterThanOrEqual': return num && v.num >= n
+    case 'LessThan': return num && v.num < n
+    case 'LessThanOrEqual': return num && v.num <= n
+    case 'Equal': return isNaN(n) ? t === a : num && v.num === n
+    case 'NotEqual': return isNaN(n) ? t !== a : !num || v.num !== n
+    case 'Between': return num && v.num >= Math.min(n, n2) && v.num <= Math.max(n, n2)
+    case 'NotBetween': return num && (v.num < Math.min(n, n2) || v.num > Math.max(n, n2))
+    case 'DuplicateValues': return !v.blank && (dupes?.get(t) || 0) > 1
+  }
+  return false
+}
+
+const hex = (c) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(c || '')
+  return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : [255, 255, 255]
+}
+const mix = (a, b, t) => '#' + hex(a).map((x, i) => Math.round(x + (hex(b)[i] - x) * t).toString(16).padStart(2, '0')).join('')
+
+// cfFor gathers a sheet's rules and what they need to know about their
+// ranges (lowest, middle and highest numbers; repeated values).
+export function cfFor(m, sheet, cache, rev) {
+  const rules = readMeta(m, 'cf', cache, rev).filter((x) => x.ref?.sheet === sheet)
+  const stats = new Map()
+  for (const x of rules) {
+    if (!x.scale && x.cond !== 'DuplicateValues') continue
+    const nums = []
+    const dupes = new Map()
+    const r2 = Math.min(x.ref.r2, Math.max(x.ref.r1, extentRows(m, sheet, x.ref)), x.ref.r1 + 50000)
+    for (let r = x.ref.r1; r <= r2; r++) {
+      for (let c = x.ref.c1; c <= Math.min(x.ref.c2, x.ref.c1 + 200); c++) {
+        const v = cellValue(m, sheet, r, c)
+        if (!isNaN(v.num)) nums.push(v.num)
+        if (!v.blank) dupes.set(v.text.toLowerCase(), (dupes.get(v.text.toLowerCase()) || 0) + 1)
+      }
+    }
+    nums.sort((a, b) => a - b)
+    stats.set(x.id, { min: nums[0], max: nums[nums.length - 1], mid: nums.length ? nums[Math.floor((nums.length - 1) / 2)] : undefined, dupes })
+  }
+  return { rules, stats }
+}
+
+// cfLook is what the rules make of one cell: { fill, color, b, i, strike }.
+export function cfLook(cf, r, c, v) {
+  let out = null
+  for (const x of cf.rules) {
+    const ref = x.ref
+    if (r < ref.r1 || r > ref.r2 || c < ref.c1 || c > ref.c2) continue
+    const st = cf.stats.get(x.id)
+    if (x.scale) {
+      if (isNaN(v.num) || st?.min === undefined) continue
+      const { min, max, mid } = st
+      const s = x.scale
+      let fill
+      if (max === min) fill = s.max
+      else if (s.mid && mid !== undefined && mid > min && mid < max) fill = v.num <= mid ? mix(s.min, s.mid, (v.num - min) / (mid - min)) : mix(s.mid, s.max, (v.num - mid) / (max - mid))
+      else fill = mix(s.min, s.max, (v.num - min) / (max - min))
+      out = { ...out, fill }
+    } else if (cfTest(v, x, st?.dupes)) {
+      const y = x.style || {}
+      out = { ...out, ...(y.fill && { fill: y.fill }), ...(y.color && { color: y.color }), ...(y.b && { b: true }), ...(y.i && { i: true }), ...(y.strike && { strike: true }) }
+    }
+  }
+  return out
+}
+
+export function describeCf(x) {
+  if (x.scale) return 'Colour scale'
+  return `${cfConds[x.cond] || x.cond}${x.a != null && x.a !== '' ? ' ' + x.a : ''}${/Between/.test(x.cond) ? ' and ' + (x.b ?? '') : ''}`
+}
+
+// cfRule checks a rule from the API or the panel.
+export function cfRule(spec) {
+  if (spec.scale) {
+    const { min = '#ffffff', mid = '', max = '#57bb8a' } = spec.scale
+    return { scale: { min, mid, max } }
+  }
+  if (!cfConds[spec.cond]) throw new Error(`cond must be one of ${Object.keys(cfConds).join(', ')}`)
+  const st = spec.style || {}
+  return { cond: spec.cond, a: spec.a ?? '', b: spec.b ?? '', style: { b: !!st.b, i: !!st.i, strike: !!st.strike, color: st.color || '', fill: st.fill || '' } }
+}
+
+export const addCf = (m, ref, spec) => addMeta(m, { kind: 'cf', ...cfRule(spec) }, ref)
+
+// The engine's own rules (as Excel files bring them) become ours.
+export function adoptEngineCf(m) {
+  for (const sheet of visibleSheets(m)) {
+    const list = m.getConditionalFormattingList(sheet)
+    for (const x of [...list].sort((p, q) => q.priority - p.priority)) {
+      const ref = parseRange(m, x.range.split(/\s+/)[0], sheet)
+      const rule = x.cf_rule
+      const dxf = m.getDxfForConditionalFormatting(sheet, x.index) || {}
+      const style = { b: !!dxf.font?.b, i: !!dxf.font?.i, strike: !!dxf.font?.strike, color: typeof dxf.font?.color === 'string' ? dxf.font.color : '', fill: typeof dxf.fill?.color === 'string' ? dxf.fill.color : '' }
+      const unq = (s) => String(s ?? '').replace(/^"(.*)"$/, '$1').replace(/""/g, '"')
+      let spec = null
+      if (rule.type === 'ColorScale') {
+        const t = rule.thresholds
+        const col = (c) => (typeof c === 'string' ? c : '#ffffff')
+        spec = { scale: { min: col(t[0]?.color), mid: t.length > 2 ? col(t[1].color) : '', max: col(t[t.length - 1]?.color) } }
+      } else if (rule.type === 'CellIs') spec = { cond: rule.operator, a: unq(rule.formula), b: unq(rule.formula2), style }
+      else if (rule.type === 'Text') spec = { cond: rule.operator, a: rule.value, style }
+      else if (['Blanks', 'NotBlanks', 'DuplicateValues'].includes(rule.type)) spec = { cond: rule.type, style }
+      if (ref && spec && cfConds[spec.cond] !== undefined || (ref && spec?.scale)) addCf(m, ref, spec)
+    }
+    for (const x of [...list].sort((p, q) => q.index - p.index)) m.deleteConditionalFormatting(sheet, x.index)
+  }
+}
+
+// engineCf writes our rules as the engine's, for an Excel file.
+export function engineCf(m) {
+  for (const x of readMeta(m, 'cf')) {
+    if (!x.ref) continue
+    const range = `${colName(x.ref.c1)}${x.ref.r1}:${colName(x.ref.c2)}${x.ref.r2}`
+    let rule
+    if (x.scale) {
+      const t = [{ cfvo: 'Min', color: x.scale.min }]
+      if (x.scale.mid) t.push({ cfvo: { Percentile: 50 }, color: x.scale.mid })
+      t.push({ cfvo: 'Max', color: x.scale.max })
+      rule = { type: 'ColorScale', thresholds: t }
+    } else {
+      const s = x.style || {}
+      const format = {}
+      if (s.b || s.i || s.strike || s.color) format.font = { ...(s.b && { b: true }), ...(s.i && { i: true }), ...(s.strike && { strike: true }), ...(s.color && { color: s.color }) }
+      if (s.fill) format.fill = { color: s.fill }
+      const lit = (v) => (v === '' || isFinite(Number(v)) ? String(v) : `"${String(v).replace(/"/g, '""')}"`)
+      const base = { format, stop_if_true: false }
+      if (['Contains', 'DoesNotContain', 'BeginsWith', 'EndsWith', 'Equals'].includes(x.cond)) rule = { type: 'Text', operator: x.cond, value: String(x.a ?? ''), ...base }
+      else if (['Blanks', 'NotBlanks', 'DuplicateValues'].includes(x.cond)) rule = { type: x.cond, ...base }
+      else rule = { type: 'CellIs', operator: x.cond, formula: lit(x.a ?? ''), formula2: /Between/.test(x.cond) ? lit(x.b ?? '') : null, ...base }
+    }
+    try {
+      m.addConditionalFormatting(x.ref.sheet, range, rule)
+    } catch {}
+  }
+}
+
 // --- text clipping -------------------------------------------------------------
 // Excel has only "overflow" and "wrap"; "clip" (cut the text at the cell's
 // edge) is kept here as ranges.
@@ -647,7 +813,7 @@ export function setup(m) {
     frozenColumns: m.getFrozenColumnsCount(i),
     filter: meta.filter((x) => x.kind === 'filter' && x.ref?.sheet === i).map((f) => ({ range: rt(f.ref), criteria: namedCriteria(f) }))[0] || null,
     filterViews: meta.filter((x) => x.kind === 'view' && x.ref?.sheet === i).map((f) => ({ id: f.id, name: f.name, owner: f.ownerName || '', range: rt(f.ref), criteria: namedCriteria(f), sort: f.sort ? { column: colName(f.sort.col), desc: !!f.sort.desc } : null })),
-    conditionalFormats: m.getConditionalFormattingList(i).map((x) => ({ index: x.index, range: x.range, rule: x.cf_rule, format: m.getDxfForConditionalFormatting(i, x.index) })),
+    conditionalFormats: meta.filter((x) => x.kind === 'cf' && x.ref?.sheet === i).map((x) => (x.scale ? { id: x.id, range: rt(x.ref), scale: x.scale } : { id: x.id, range: rt(x.ref), cond: x.cond, a: x.a, b: x.b, style: x.style })),
     validation: meta.filter((x) => x.kind === 'validation' && x.ref?.sheet === i).map((v) => ({ id: v.id, range: rt(v.ref), rule: v.rule, strict: v.strict, help: v.help || '' })),
     pivotTable: (() => {
       const p = meta.find((x) => x.kind === 'pivot' && sheetById(m, x.target) === i)

@@ -12,7 +12,7 @@ import { parseRange, rangeText } from './sheet-charts.js'
 import { TextField } from './charts.jsx'
 import {
   readMeta, updateMeta, addMeta, removeMeta, setFilter, sortRange, columnValues, condOps, dataBlock, setValidation, clearValidation,
-  describeRule, findAll, replaceAll, visibleSheets, addPivot, updatePivot, pivotFns, sheetById, MAXR, MAXC,
+  describeRule, findAll, replaceAll, visibleSheets, addPivot, updatePivot, pivotFns, sheetById, cfConds, cfRule, addCf, describeCf, MAXR, MAXC,
 } from './sheet-meta.js'
 import './sheet-panels.css'
 
@@ -289,68 +289,20 @@ export function ValidationPanel({ s, onClose }) {
 
 // --- conditional formatting -------------------------------------------------------
 
-const cellOps = [
-  ['GreaterThan', 'Greater than'], ['GreaterThanOrEqual', 'Greater than or equal to'], ['LessThan', 'Less than'],
-  ['LessThanOrEqual', 'Less than or equal to'], ['Equal', 'Is equal to'], ['NotEqual', 'Is not equal to'],
-  ['Between', 'Is between'], ['NotBetween', 'Is not between'],
-]
-const textOpsCf = [['Contains', 'Text contains'], ['DoesNotContain', 'Text does not contain'], ['BeginsWith', 'Text starts with'], ['EndsWith', 'Text ends with'], ['Equals', 'Text is exactly']]
-const conditions = [
-  ['Blanks', 'Is empty'], ['NotBlanks', 'Is not empty'], ...textOpsCf, ...cellOps, ['DuplicateValues', 'Is a duplicate'], ['Formula', 'Custom formula is'],
-]
-
-const literal = (v) => (v === '' || isFinite(Number(v)) ? String(v) : `"${String(v).replace(/"/g, '""')}"`)
-
-function toRule(kind, cond, a, b, style, scale) {
-  if (kind === 'scale') {
-    const t = [{ cfvo: 'Min', color: scale.min }]
-    if (scale.mid) t.push({ cfvo: { Percentile: 50 }, color: scale.mid })
-    t.push({ cfvo: 'Max', color: scale.max })
-    return { type: 'ColorScale', thresholds: t }
-  }
-  const format = {}
-  if (style.b || style.i || style.strike || style.color) format.font = { ...(style.b && { b: true }), ...(style.i && { i: true }), ...(style.strike && { strike: true }), ...(style.color && { color: style.color }) }
-  if (style.fill) format.fill = { color: style.fill }
-  const base = { format, stop_if_true: false }
-  if (textOpsCf.some(([k]) => k === cond)) return { type: 'Text', operator: cond, value: a, ...base }
-  if (cellOps.some(([k]) => k === cond)) return { type: 'CellIs', operator: cond, formula: literal(a), formula2: cond.endsWith('Between') ? literal(b) : null, ...base }
-  if (cond === 'Formula') return { type: 'Formula', formula: a.replace(/^=/, ''), ...base }
-  return { type: cond, ...base }
-}
-
-function fromRule(rule, dxf) {
-  if (rule.type === 'ColorScale') {
-    const t = rule.thresholds
-    return { kind: 'scale', scale: { min: t[0]?.color, mid: t.length > 2 ? t[1].color : '', max: t[t.length - 1]?.color } }
-  }
-  const style = { b: !!dxf?.font?.b, i: !!dxf?.font?.i, strike: !!dxf?.font?.strike, color: dxf?.font?.color || '', fill: dxf?.fill?.color || '' }
-  const unq = (x) => String(x ?? '').replace(/^"(.*)"$/, '$1').replace(/""/g, '"')
-  if (rule.type === 'Text') return { kind: 'single', cond: rule.operator, a: rule.value, style }
-  if (rule.type === 'CellIs') return { kind: 'single', cond: rule.operator, a: unq(rule.formula), b: unq(rule.formula2), style }
-  if (rule.type === 'Formula') return { kind: 'single', cond: 'Formula', a: '=' + rule.formula, style }
-  return { kind: 'single', cond: rule.type, style }
-}
-
-const describeCf = (rule) => {
-  if (rule.type === 'ColorScale') return 'Colour scale'
-  const name = conditions.find(([k]) => k === (rule.operator || rule.type))?.[1] || rule.type
-  const v = rule.value ?? rule.formula ?? ''
-  return `${name}${v ? ' ' + v : ''}${rule.formula2 ? ' and ' + rule.formula2 : ''}`
-}
-
 export function CondPanel({ s, onClose }) {
   const m = s.model
-  const list = m.getConditionalFormattingList(s.sheet)
+  const list = s.meta('cf').filter((x) => x.ref?.sheet === s.sheet)
   const sel = { sheet: s.sheet, r1: s.sel.r1, c1: s.sel.c1, r2: Math.min(s.sel.r2, s.R), c2: Math.min(s.sel.c2, s.C) }
-  const blank = { index: null, range: rangeText(m, sel, s.sheet), kind: 'single', cond: 'GreaterThan', a: '', b: '', style: { b: false, i: false, strike: false, color: '', fill: '#d3f9d8' }, scale: { min: '#ffffff', mid: '', max: '#57bb8a' } }
+  const blank = { id: null, range: rangeText(m, sel, s.sheet), kind: 'single', cond: 'GreaterThan', a: '', b: '', style: { b: false, i: false, strike: false, color: '', fill: '#d3f9d8' }, scale: { min: '#ffffff', mid: '', max: '#57bb8a' } }
   const [edit, setEdit] = useState(list.length ? null : blank)
   const set = (patch) => setEdit({ ...edit, ...patch })
   const save = () => {
     const ref = parseRange(m, edit.range, s.sheet)
     if (!ref) return
-    const range = `${colName(ref.c1)}${ref.r1}:${colName(ref.c2)}${ref.r2}`
-    const rule = toRule(edit.kind, edit.cond, edit.a, edit.b, edit.style, edit.scale)
-    s.act((mm) => (edit.index === null ? mm.addConditionalFormatting(ref.sheet, range, rule) : mm.updateConditionalFormatting(s.sheet, edit.index, range, rule)))
+    const spec = cfRule(edit.kind === 'scale' ? { scale: edit.scale } : { cond: edit.cond, a: edit.a, b: edit.b, style: edit.style })
+    const old = edit.id && list.find((x) => x.id === edit.id)
+    // Switching between a colour and a scale drops the other's settings.
+    s.act((mm) => (old ? updateMeta(mm, old, { cond: undefined, a: undefined, b: undefined, style: undefined, scale: undefined, ...spec }, ref) : addCf(mm, ref, spec)))
     setEdit(null)
   }
   const needsA = edit && !['Blanks', 'NotBlanks', 'DuplicateValues'].includes(edit.cond)
@@ -361,14 +313,13 @@ export function CondPanel({ s, onClose }) {
         {!edit && <>
           <div class="sp-rules">
             {list.map((x) => {
-              const dxf = m.getDxfForConditionalFormatting(s.sheet, x.index)
-              const f = fromRule(x.cf_rule, dxf)
+              const st = x.style || {}
               return (
-                <div key={x.index} class="sp-rule">
-                  <span class="sp-swatch" style={f.kind === 'scale' ? { background: `linear-gradient(90deg, ${f.scale.min}, ${f.scale.mid || f.scale.min}, ${f.scale.max})` } : { background: f.style.fill || 'transparent', color: f.style.color || 'inherit', fontWeight: f.style.b ? 700 : 400 }}>123</span>
-                  <span class="sp-rule-what">{describeCf(x.cf_rule)}<span class="sp-rule-range">{x.range}</span></span>
-                  <IconButton icon={Pencil} label="Edit rule" onClick={() => setEdit({ ...blank, ...f, style: { ...blank.style, ...(f.style || {}) }, scale: { ...blank.scale, ...(f.scale || {}) }, index: x.index, range: x.range })} />
-                  <IconButton icon={Trash2} label="Delete rule" onClick={() => s.act((mm) => mm.deleteConditionalFormatting(s.sheet, x.index))} />
+                <div key={x.id} class="sp-rule">
+                  <span class="sp-swatch" style={x.scale ? { background: `linear-gradient(90deg, ${x.scale.min}, ${x.scale.mid || x.scale.min}, ${x.scale.max})` } : { background: st.fill || 'transparent', color: st.color || 'inherit', fontWeight: st.b ? 700 : 400 }}>123</span>
+                  <span class="sp-rule-what">{describeCf(x)}<span class="sp-rule-range">{rangeText(m, x.ref, s.sheet)}</span></span>
+                  <IconButton icon={Pencil} label="Edit rule" onClick={() => setEdit({ ...blank, kind: x.scale ? 'scale' : 'single', cond: x.cond || blank.cond, a: x.a ?? '', b: x.b ?? '', style: { ...blank.style, ...st }, scale: { ...blank.scale, ...(x.scale || {}) }, id: x.id, range: rangeText(m, x.ref, s.sheet) })} />
+                  <IconButton icon={Trash2} label="Delete rule" onClick={() => s.act((mm) => removeMeta(mm, x))} />
                 </div>
               )
             })}
@@ -384,10 +335,10 @@ export function CondPanel({ s, onClose }) {
           {edit.kind === 'single' ? <>
             <Field label="Format cells if">
               <select class="select" aria-label="Format cells if" value={edit.cond} onChange={(e) => set({ cond: e.target.value })}>
-                {conditions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {Object.entries(cfConds).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </Field>
-            {needsA && <input class="input" aria-label="Value or formula" placeholder={edit.cond === 'Formula' ? '=B2>100' : 'Value'} value={edit.a} onInput={(e) => set({ a: e.target.value })} />}
+            {needsA && <input class="input" aria-label="Value or formula" placeholder="Value" value={edit.a} onInput={(e) => set({ a: e.target.value })} />}
             {edit.cond.endsWith('Between') && <input class="input" aria-label="Second value" placeholder="and" value={edit.b} onInput={(e) => set({ b: e.target.value })} />}
             <div class="sp-h">Formatting style</div>
             <div class="sp-row">

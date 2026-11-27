@@ -158,7 +158,7 @@ func TestContentSheetOps(t *testing.T) {
 		map[string]any{"op": "freeze", "rows": 1},
 		map[string]any{"op": "format", "range": "A1:C1", "bold": true, "font": "Georgia", "fill": "#ffec99", "wrap": "wrap"},
 		map[string]any{"op": "filter", "range": "A1:C5", "criteria": map[string]any{"A": map[string]any{"hidden": []string{"East"}}}},
-		map[string]any{"op": "conditionalFormat", "range": "C2:C5", "rule": map[string]any{"type": "CellIs", "operator": "GreaterThan", "formula": "8", "formula2": nil, "format": map[string]any{"fill": map[string]any{"color": "#d3f9d8"}}, "stop_if_true": false}},
+		map[string]any{"op": "conditionalFormat", "range": "C2:C5", "cond": "GreaterThan", "a": "8", "format": map[string]any{"fill": "#d3f9d8", "bold": true}},
 		map[string]any{"op": "validation", "range": "A2:A5", "rule": map[string]any{"type": "list", "values": []string{"North", "South", "East"}}},
 	)
 	if got := read("C2:C5"); got[0][0] != "20" || got[3][0] != "5" {
@@ -217,7 +217,7 @@ func TestContentSheetOps(t *testing.T) {
 			sheet1 = string(x)
 		}
 	}
-	for _, part := range []string{`<autoFilter ref="A1:C6">`, `<dataValidation type="list"`, `hidden="1"`, `<pane `} {
+	for _, part := range []string{`<autoFilter ref="A1:C6">`, `<dataValidation type="list"`, `hidden="1"`, `<pane `, `<conditionalFormatting sqref="C2:C5"`} {
 		if !strings.Contains(sheet1, part) {
 			t.Errorf("sheet1.xml lacks %s", part)
 		}
@@ -229,7 +229,7 @@ func TestContentSheetOps(t *testing.T) {
 	var back docOut
 	json.NewDecoder(r.Body).Decode(&back)
 	bearer(t, ts, tok, "GET", "/api/v1/documents/"+back.ID+"/sheet-setup", nil, &setup)
-	if len(setup.Sheets) < 1 || setup.Sheets[0].Filter == nil || len(setup.Sheets[0].Validation) != 1 {
+	if len(setup.Sheets) < 1 || setup.Sheets[0].Filter == nil || len(setup.Sheets[0].Validation) != 1 || len(setup.Sheets[0].ConditionalFormats) != 1 {
 		t.Errorf("imported setup = %+v", setup)
 	}
 	// Bad ops say what is wrong.

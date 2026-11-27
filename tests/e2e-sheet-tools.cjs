@@ -44,10 +44,11 @@ async function selectRange(page, a, b) {
   const problems = []
   let created = null
   let cleanup = null
+  const pages = {}
   const ok = (msg) => console.log('  ok  ' + msg)
   try {
-    const A = await b.open()
-    const B = await b.open()
+    const A = (pages.admin = await b.open())
+    const B = (pages.colleague = await b.open())
     cleanup = async (id) => {
       await A.goto(BASE + '/')
       await A.evaluate(async (id) => fetch('/api/docs/' + id, { method: 'DELETE' }), id)
@@ -65,7 +66,8 @@ async function selectRange(page, a, b) {
     await B.goto(BASE + '/s/' + doc.id)
     await A.waitForSelector('.menubar')
     await B.waitForSelector('.menubar')
-    await until(B, () => window.__sheet?.model && window.__sheet.canEdit)
+    await until(A, () => window.__sheet?.model && window.__sheet.online, null, 20000)
+    await until(B, () => window.__sheet?.model && window.__sheet.online && window.__sheet.canEdit, null, 20000)
 
     // The menu bar: keyboard and search.
     await A.click('.grid-scroll', { position: cell(1, 1) })
@@ -119,7 +121,7 @@ async function selectRange(page, a, b) {
     const viewUrl = A.url()
     if (!/fv=/.test(viewUrl)) throw new Error('the filter view is not in the address')
     await B.goto(viewUrl)
-    await until(B, () => window.__sheet?.view && window.__sheet.hidden.has(2))
+    await until(B, () => window.__sheet?.view && window.__sheet.hidden?.has(2))
     await B.click('[aria-label="Close filter view"]')
     await until(B, () => !window.__sheet.view && !window.__sheet.hidden.has(2))
     await A.click('[aria-label="Close filter view"]')
@@ -148,7 +150,7 @@ async function selectRange(page, a, b) {
     await menu(A, 'Format', 'Conditional formatting')
     await A.fill('[aria-label="Value or formula"]', '10')
     await A.click('.chart-panel button:text-is("Done")')
-    await until(B, () => !!window.__sheet.model.getCellStyle(0, 3, 3).style.fill?.color)
+    await until(B, () => window.__sheet.sheet === 0 && !!window.__sheet.cell(3, 3).fill && !window.__sheet.cell(2, 3).fill)
     await A.click('[aria-label="Close conditional formatting"]')
     ok('conditional formatting: the rule colours matching cells for the colleague')
 
@@ -219,6 +221,13 @@ async function selectRange(page, a, b) {
     console.log('all good')
   } catch (e) {
     console.error('FAILED: ' + e.message.split('\n').slice(0, 12).join('\n'))
+    for (const [name, page] of Object.entries(pages)) {
+      const at = await page.evaluate(() => {
+        const s = window.__sheet
+        return { url: location.href, model: !!s?.model, online: s?.online, sel: s?.sel, cf: s?.model?.getConditionalFormattingList(0), toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent), panel: document.querySelector('.chart-panel')?.getAttribute('aria-label') }
+      }).catch((x) => x.message)
+      console.error(`  ${name}: ${JSON.stringify(at)}`)
+    }
     if (problems.length) console.error(problems.slice(0, 12).join('\n'))
     process.exitCode = 1
   } finally {

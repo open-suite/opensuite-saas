@@ -14,7 +14,7 @@ import { kvGet, kvSet } from '../lib/idb.js'
 import { csvSnapshot } from '../lib/csv.js'
 import { colorFor, debounce } from '../lib/util.js'
 import { blank, applyDiff, loadModel, colName, sheetText, timezone } from './sheet-data.js'
-import { readMeta, refreshPivots, hiddenRows, filterOf, validationAt, listItems, valid, describeRule, clipped, setWrapping as wrapMode } from './sheet-meta.js'
+import { readMeta, refreshPivots, hiddenRows, filterOf, validationAt, listItems, valid, describeRule, clipped, setWrapping as wrapMode, cfFor, cfLook, cellValue } from './sheet-meta.js'
 
 export { colName }
 
@@ -140,6 +140,8 @@ export class Sheet {
     this.redos = []
     this.view = null // id of the filter view open on this screen only
     this.painter = null // styles picked up by Paint format, until used
+    this.cf = { rules: [], stats: new Map() } // conditional formatting on the open sheet
+    this.sheetRules = []
     this.saveLocal = debounce(() => this.cacheNow(), 1200)
     this.tell = debounce(() => this.sendPresence(), 60)
   }
@@ -392,6 +394,7 @@ export class Sheet {
     this.hidden = hiddenRows(m, this.filter)
     this.sheetRules = this.meta('validation').filter((v) => v.ref?.sheet === s)
     this.hasClips = this.meta('clip').some((v) => v.ref?.sheet === s)
+    this.cf = cfFor(m, s, this, this.rev)
     this.fr = Math.min(m.getFrozenRowsCount(s), this.R - 1)
     this.fc = Math.min(m.getFrozenColumnsCount(s), this.C - 1)
     this.colX = new Float64Array(this.C + 1)
@@ -471,18 +474,23 @@ export class Sheet {
     const m = this.model
     const text = m.getFormattedCellValue(this.sheet, row, col)
     const st = m.getCellStyle(this.sheet, row, col).style
-    const f = st.font || {}
+    let f = st.font || {}
     const type = text ? m.getCellType(this.sheet, row, col) : 0
     let align = st.alignment?.horizontal || 'general'
     if (align === 'general') align = type === 1 ? 'right' : type === 4 || type === 16 ? 'center' : 'left'
     const rule = this.sheetRules.length ? validationAt(m, this.sheet, row, col, this, this.rev)?.rule : null
+    const look = this.cf.rules.length ? cfLook(this.cf, row, col, cellValue(m, this.sheet, row, col)) : null
+    if (look) {
+      f = { ...f, ...(look.b && { b: true }), ...(look.i && { i: true }), ...(look.strike && { strike: true }) }
+      if (look.color) f.color = look.color
+    }
     c = {
       text,
       bold: !!f.b, italic: !!f.i, under: !!f.u, strike: !!f.strike,
       px: Math.round((f.sz || 12) * 1.0834),
       family: fontCss(f.name, f.scheme),
       color: f.color ? m.resolveColor(f.color) : '',
-      fill: st.fill?.color ? m.resolveColor(st.fill.color) : '',
+      fill: look?.fill || (st.fill?.color ? m.resolveColor(st.fill.color) : ''),
       align: align === 'center' || align === 'right' ? align : 'left',
       valign: st.alignment?.vertical || 'bottom',
       wrap: !!st.alignment?.wrap_text,

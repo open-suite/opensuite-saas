@@ -7,7 +7,7 @@ import { addSheet, colName } from '../apps/sheet-data.js'
 import { parseRange } from '../apps/sheet-charts.js'
 import {
   setFilter, removeFilter, addMeta, readMeta, removeMeta, updateMeta, setValidation, clearValidation, setWrapping, sortRange, replaceAll,
-  visibleSheets, addPivot, updatePivot, sheetById, setup, pivotFns, condOps, MAXR, MAXC,
+  visibleSheets, addPivot, updatePivot, sheetById, setup, pivotFns, condOps, cfRule, addCf, MAXR, MAXC,
 } from '../apps/sheet-meta.js'
 
 // The sheets people see, with their position in the workbook (`at`) and
@@ -230,15 +230,22 @@ export function applyOp(m, op, dflt) {
     }
     case 'conditionalFormat': {
       const r = rangeOf()
-      const rule = need(op.rule, 'rule', 'object')
-      const range = `${colName(r.c1)}${r.r1}:${colName(r.c2)}${r.r2}`
-      if (op.index != null) m.updateConditionalFormatting(r.sheet, op.index, range, rule)
-      else m.addConditionalFormatting(r.sheet, range, rule)
+      const st = op.format || {}
+      const spec = cfRule(op.scale ? { scale: op.scale } : { cond: op.cond, a: op.a ?? op.value, b: op.b, style: { b: st.bold, i: st.italic, strike: st.strikethrough, color: st.color, fill: st.fill } })
+      if (op.id) {
+        const old = readMeta(m, 'cf').find((x) => x.id === op.id)
+        if (!old) throw new Error(`No conditional formatting rule ${JSON.stringify(op.id)}; get_sheet_setup lists them`)
+        updateMeta(m, old, { cond: undefined, a: undefined, b: undefined, style: undefined, scale: undefined, ...spec }, r)
+        return { id: op.id }
+      }
+      return { id: addCf(m, r, spec) }
+    }
+    case 'removeConditionalFormat': {
+      const old = readMeta(m, 'cf').find((x) => x.id === op.id)
+      if (!old) throw new Error(`No conditional formatting rule ${JSON.stringify(op.id)}`)
+      removeMeta(m, old)
       return null
     }
-    case 'removeConditionalFormat':
-      m.deleteConditionalFormatting(s, need(op.index, 'index', 'number'))
-      return null
     case 'validation': {
       const rule = need(op.rule, 'rule', 'object')
       if (!['list', 'range', 'checkbox', 'number', 'text'].includes(rule.type)) throw new Error('rule.type must be list, range, checkbox, number or text')

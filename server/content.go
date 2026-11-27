@@ -281,12 +281,15 @@ func (s *Server) contentOps() []*apiOp {
 		"header":        boolean("sort: the range's first row is headings and stays put."),
 		"by":            array(object(js{"column": str("Column letter."), "desc": boolean("Z to A.")}, "column"), "sort: columns to sort by, in order."),
 		"criteria":      anyObject("filter, addFilterView: by column letter, {hidden: [shown values to hide], condition: {op, a, b}}."),
-		"id":            str("removeFilterView, updatePivot, removePivot: the item's id (get_sheet_setup)."),
-		"index":         integer("conditionalFormat (to replace a rule), removeConditionalFormat: the rule's index (get_sheet_setup)."),
-		"rule": anyObject("conditionalFormat: the engine's rule, e.g. {type: \"CellIs\", operator: \"GreaterThan\", formula: \"100\", formula2: null, format: {fill: {color: \"#d3f9d8\"}, font: {b: true}}, stop_if_true: false}, " +
-			"{type: \"Text\", operator: \"Contains\", value: \"late\", format, stop_if_true: false}, {type: \"Blanks\"|\"NotBlanks\"|\"DuplicateValues\", format, stop_if_true: false}, {type: \"Formula\", formula: \"B2>100\", format, stop_if_true: false} or " +
-			"{type: \"ColorScale\", thresholds: [{cfvo: \"Min\", color: \"#ffffff\"}, {cfvo: \"Max\", color: \"#57bb8a\"}]}. " +
-			"validation: {type: \"list\", values: [...]}, {type: \"range\", source: \"Sheet2!A2:A20\"}, {type: \"checkbox\"}, {type: \"number\", op, a, b} or {type: \"text\", op: contains|notContains|is, a}."),
+		"id":            str("removeFilterView, updatePivot, removePivot, removeConditionalFormat: the item's id (get_sheet_setup). conditionalFormat: a rule's id to replace it."),
+		"cond": enum("conditionalFormat: when the formatting applies.", "GreaterThan", "GreaterThanOrEqual", "LessThan", "LessThanOrEqual", "Equal", "NotEqual", "Between", "NotBetween",
+			"Contains", "DoesNotContain", "BeginsWith", "EndsWith", "Equals", "Blanks", "NotBlanks", "DuplicateValues"),
+		"a":      str("conditionalFormat: the value to compare with."),
+		"b":      str("conditionalFormat: the second value (Between, NotBetween)."),
+		"format": object(js{"bold": boolean(""), "italic": boolean(""), "strikethrough": boolean(""), "color": str("#rrggbb"), "fill": str("#rrggbb")}),
+		"scale":  object(js{"min": str("Colour of the lowest value."), "mid": str("Colour of the median (optional)."), "max": str("Colour of the highest value.")}),
+		"rule": anyObject("validation: {type: \"list\", values: [...]}, {type: \"range\", source: \"Sheet2!A2:A20\"}, {type: \"checkbox\"}, {type: \"number\", op, a, b} " +
+			"(op: between, gt, gte, lt, lte, eq, ne) or {type: \"text\", op: contains|notContains|is, a}."),
 		"strict":      boolean("validation: refuse other input (default true); false only marks it."),
 		"help":        str("validation: help text shown when input is refused."),
 		"source":      str("pivot, updatePivot: the data, headings in its first row, e.g. Sheet1!A1:D200."),
