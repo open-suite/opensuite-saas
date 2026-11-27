@@ -256,6 +256,55 @@ func (s *Server) contentOps() []*apiOp {
 		"position": integer("1-based position (addSlide, moveSlide); default the end."),
 		"theme":    str("Theme id (setTheme)."),
 	}, "op")
+	sheetOp := object(js{
+		"op": enum("What to do.", "format", "clearFormatting", "merge", "unmerge", "freeze", "resize", "insertRows", "deleteRows", "insertColumns", "deleteColumns",
+			"addSheet", "renameSheet", "deleteSheet", "sort", "filter", "removeFilter", "addFilterView", "removeFilterView", "conditionalFormat", "removeConditionalFormat",
+			"validation", "clearValidation", "pivot", "updatePivot", "removePivot", "replace"),
+		"sheet":         str("The sheet this op works on (name or 0-based index); default the request's sheet."),
+		"range":         str("Cells it applies to (format, clearFormatting, merge, unmerge, sort, filter, addFilterView, conditionalFormat, validation, clearValidation)."),
+		"bold":          boolean("format"),
+		"italic":        boolean("format"),
+		"underline":     boolean("format"),
+		"strikethrough": boolean("format"),
+		"font":          str("format: font family such as Georgia; empty for the default."),
+		"size":          integer("format: font size in points."),
+		"color":         str("format: text colour, #rrggbb."),
+		"fill":          str("format: fill colour, #rrggbb; empty for none."),
+		"align":         enum("format", "left", "center", "right", "general"),
+		"valign":        enum("format", "top", "middle", "bottom"),
+		"wrap":          enum("format", "overflow", "wrap", "clip"),
+		"numberFormat":  str("format: an Excel number format such as #,##0.00 or 0%."),
+		"borders":       enum("format", "all", "outer", "bottom", "top", "left", "right", "inner", "none"),
+		"rows":          js{"description": "freeze: rows to freeze. resize: rows such as \"2:5\". pivot/updatePivot: column letters to group rows by.", "type": []string{"integer", "string", "array"}},
+		"columns":       js{"description": "freeze: columns to freeze. resize: columns such as \"A:C\". pivot/updatePivot: at most one column letter to spread across.", "type": []string{"integer", "string", "array"}},
+		"width":         integer("resize: column width in pixels."),
+		"height":        integer("resize: row height in pixels."),
+		"at":            js{"description": "insertRows/deleteRows: row number. insertColumns/deleteColumns: column letter.", "type": []string{"integer", "string"}},
+		"count":         integer("insert/delete: how many (default 1)."),
+		"name":          str("addSheet, renameSheet, addFilterView: the name."),
+		"header":        boolean("sort: the range's first row is headings and stays put."),
+		"by":            array(object(js{"column": str("Column letter."), "desc": boolean("Z to A.")}, "column"), "sort: columns to sort by, in order."),
+		"criteria":      anyObject("filter, addFilterView: by column letter, {hidden: [shown values to hide], condition: {op, a, b}}."),
+		"id":            str("removeFilterView, updatePivot, removePivot: the item's id (get_sheet_setup)."),
+		"index":         integer("conditionalFormat (to replace a rule), removeConditionalFormat: the rule's index (get_sheet_setup)."),
+		"rule": anyObject("conditionalFormat: the engine's rule, e.g. {type: \"CellIs\", operator: \"GreaterThan\", formula: \"100\", formula2: null, format: {fill: {color: \"#d3f9d8\"}, font: {b: true}}, stop_if_true: false}, " +
+			"{type: \"Text\", operator: \"Contains\", value: \"late\", format, stop_if_true: false}, {type: \"Blanks\"|\"NotBlanks\"|\"DuplicateValues\", format, stop_if_true: false}, {type: \"Formula\", formula: \"B2>100\", format, stop_if_true: false} or " +
+			"{type: \"ColorScale\", thresholds: [{cfvo: \"Min\", color: \"#ffffff\"}, {cfvo: \"Max\", color: \"#57bb8a\"}]}. " +
+			"validation: {type: \"list\", values: [...]}, {type: \"range\", source: \"Sheet2!A2:A20\"}, {type: \"checkbox\"}, {type: \"number\", op, a, b} or {type: \"text\", op: contains|notContains|is, a}."),
+		"strict":      boolean("validation: refuse other input (default true); false only marks it."),
+		"help":        str("validation: help text shown when input is refused."),
+		"source":      str("pivot, updatePivot: the data, headings in its first row, e.g. Sheet1!A1:D200."),
+		"values":      array(object(js{"column": str("Column letter."), "fn": enum("", "SUM", "COUNT", "AVERAGE", "MIN", "MAX")}, "column"), "pivot/updatePivot: what to summarise."),
+		"filters":     anyObject("pivot/updatePivot: by column letter, the values to leave out."),
+		"find":        str("replace: text or pattern to find."),
+		"replace":     str("replace: what to put instead."),
+		"matchCase":   boolean("replace"),
+		"wholeCell":   boolean("replace: the whole cell must match."),
+		"regex":       boolean("replace: find is a regular expression."),
+		"formulas":    boolean("replace: also search and change formulas."),
+		"allSheets":   boolean("replace: every sheet, not just this one."),
+		"deleteSheet": boolean("removePivot: also delete the pivot table's sheet (default true)."),
+	}, "op")
 	return []*apiOp{
 		{Method: "POST", Path: "/api/v1/documents", ID: "create_document", Tag: "Documents", Summary: "Create a document, spreadsheet or presentation", Write: true,
 			Desc: "Optionally with first content: text for a document (markdown by default), CSV for a spreadsheet, slide operations for a presentation (as edit_slides).",
@@ -324,6 +373,15 @@ func (s *Server) contentOps() []*apiOp {
 			Result: okResult, H: s.handleWriteCells},
 		{Method: "POST", Path: "/api/v1/documents/{id}/sheets", ID: "add_sheet", Tag: "Spreadsheet content", Summary: "Add a sheet", Write: true,
 			Params: []apiParam{id}, Body: object(js{"name": str("")}, "name"), Result: okResult, H: s.handleAddSheet},
+		{Method: "GET", Path: "/api/v1/documents/{id}/sheet-setup", ID: "get_sheet_setup", Tag: "Spreadsheet content", Summary: "Read a spreadsheet's filters, rules and pivot tables",
+			Desc:   "Per visible sheet: frozen rows and columns, the filter and its criteria, filter views, conditional formatting rules (with their index for edit_sheet), data validation rules and the pivot table the sheet holds, if any.",
+			Params: []apiParam{id}, Result: object(js{"sheets": array(anyObject("{name, frozenRows, frozenColumns, filter, filterViews, conditionalFormats, validation, pivotTable}"), "")}), H: s.handleSheetSetup},
+		{Method: "POST", Path: "/api/v1/documents/{id}/sheet-ops", ID: "edit_sheet", Tag: "Spreadsheet content", Summary: "Format, sort, filter and summarise a spreadsheet", Write: true,
+			Desc: "Applies operations in order, as one change that merges with anyone editing: formatting (font, size, colours, alignment, wrapping, borders, number format), merging, freezing, row and column sizes, inserting and deleting rows and columns, sheets, sorting, filters and filter views, conditional formatting, data validation (dropdowns, checkboxes, number and text rules), pivot tables, and find and replace. " +
+				"Ranges are A1 notation (\"B2:D9\", \"Sheet2!A1:C5\", \"A:C\", \"2:5\"); columns are letters. Answers with one result per op (a new id, a count, or null).",
+			Params: []apiParam{id},
+			Body:   object(js{"sheet": str("Default sheet for every op: name or 0-based index; default the first."), "ops": array(sheetOp, "")}, "ops"),
+			Result: object(js{"ok": boolean(""), "results": array(anyObject("Per op: null, {id}, {moved}, {replaced} or {id, sheet}."), "")}), H: s.handleEditSheet},
 		{Method: "GET", Path: "/api/v1/documents/{id}/slides", ID: "read_slides", Tag: "Presentation content", Summary: "Read a presentation",
 			Desc:   "Every slide in order with its layout, notes and elements (text boxes with their text, pictures, lines), and the theme.",
 			Params: []apiParam{id}, Result: anyObject("{theme, slides:[{id, position, layout, notes, elements:[{id, type, role, text, html, x, y, w, h, ...}]}]}"), H: s.handleReadSlides},
@@ -732,6 +790,54 @@ func (s *Server) handleAddSheet(w http.ResponseWriter, r *http.Request, u *User)
 	if _, allowed := s.contentDoc(w, r, u, "sheet", "edit"); allowed {
 		s.edit(w, r, u, "sheet.addSheet", map[string]any{"name": strings.TrimSpace(in.Name)})
 	}
+}
+
+func (s *Server) handleSheetSetup(w http.ResponseWriter, r *http.Request, u *User) {
+	if _, allowed := s.contentDoc(w, r, u, "sheet", "read"); !allowed {
+		return
+	}
+	st, found := s.stateOf(w, r.PathValue("id"))
+	if !found {
+		return
+	}
+	var res json.RawMessage
+	if s.content(w, r, u, "sheet.setup", map[string]any{"state": st}, &res) {
+		ok(w, res)
+	}
+}
+
+// handleEditSheet applies a list of spreadsheet operations as one edit and
+// answers with what each returned (new ids, counts).
+func (s *Server) handleEditSheet(w http.ResponseWriter, r *http.Request, u *User) {
+	var in struct {
+		Sheet json.RawMessage
+		Ops   []json.RawMessage
+	}
+	if readJSON(r, &in) != nil || len(in.Ops) == 0 {
+		fail(w, 400, "Send the changes as ops.")
+		return
+	}
+	if _, allowed := s.contentDoc(w, r, u, "sheet", "edit"); !allowed {
+		return
+	}
+	id := r.PathValue("id")
+	st, found := s.stateOf(w, id)
+	if !found {
+		return
+	}
+	args := map[string]any{"state": st, "ops": in.Ops, "author": map[string]string{"id": u.ID, "name": u.Name}}
+	if len(in.Sheet) > 0 {
+		args["sheet"] = in.Sheet
+	}
+	var res struct {
+		engineWrite
+		Results []json.RawMessage `json:"results"`
+	}
+	if !s.content(w, r, u, "sheet.ops", args, &res) {
+		return
+	}
+	s.writeUpdate(u, id, res.Update, &res.Text)
+	ok(w, map[string]any{"ok": true, "results": res.Results})
 }
 
 func (s *Server) handleReadSlides(w http.ResponseWriter, r *http.Request, u *User) {

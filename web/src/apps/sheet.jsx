@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import {
   ArrowLeft, Undo2, Redo2, Bold, Italic, Underline, Strikethrough, Baseline, PaintBucket, AlignLeft, AlignCenter, AlignRight,
-  Grid2x2, Users, Trash2, Plus, FileX2, Merge, Pencil, ChartColumn,
+  Grid2x2, Users, Trash2, Plus, FileX2, Merge, Pencil, ChartColumn, Paintbrush, WrapText, Filter, AlignVerticalJustifyStart,
+  AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
 } from 'lucide-preact'
 import './sheet.css'
 import { user, docs, upsertDoc, toast, confirmed } from '../lib/store.js'
@@ -14,32 +15,49 @@ import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkC
 import { MenuBar } from '../menubar.jsx'
 import { ShareDialog } from './docs.jsx'
 import { Sheet, colName, prewarmSheets } from './sheet-core.js'
-import { toXlsx } from './sheet-charts.js'
 import { addSheet as appendSheet, extent, values } from './sheet-data.js'
-import { formats } from './sheet-format.js'
+import { formats, fonts, sizes } from './sheet-format.js'
 import { sheetMenus } from './sheet-menus.jsx'
+import { setFilter, removeFilter, dataBlock, pivotOn } from './sheet-meta.js'
+import { FilterMenu, ListMenu, SortDialog, ViewBar, newView, ValidationPanel, CondPanel, PivotCreate, PivotPanel, FindDialog, SizeDialog } from './sheet-panels.jsx'
 import { ChartLayer, ChartPanel, insertChart, readCharts, removeChart } from './charts.jsx'
 
 export { xlsxToSnapshot, csvToSnapshot } from './sheet-core.js'
 
 export const prewarm = () => prewarmSheets(docs.value.filter((d) => d.kind === 'sheet' && !d.trashed).slice(0, 8).map((d) => d.id))
 
-function Toolbar({ s, onChart }) {
+// The toolbar keeps the everyday formatting; the menus have the rest.
+function Toolbar({ s, onChart, onFilter }) {
   const st = s.style()
   const f = st.font || {}
   const align = st.alignment?.horizontal
+  const valign = st.alignment?.vertical || 'bottom'
   const fmt = formats.find(([code]) => code === st.num_fmt) ? st.num_fmt : 'other'
   const rows = s.sel.r2 - s.sel.r1 + 1
   const cols = s.sel.c2 - s.sel.c1 + 1
+  const font = f.scheme === 'none' ? f.name || '' : ''
+  const size = f.sz || 12
+  const wrapMode = st.alignment?.wrap_text ? 'wrap' : s.cell(s.sel.row, s.sel.col).clip ? 'clip' : 'overflow'
   const border = (type) => s.act((m) => m.setAreaWithBorder(s.area(), { item: { style: 'thin', color: '#000000' }, type }))
+  const VIcon = valign === 'top' ? AlignVerticalJustifyStart : valign === 'center' ? AlignVerticalJustifyCenter : AlignVerticalJustifyEnd
   return (
     <div class="toolbar" role="toolbar" aria-label="Formatting" onMouseDown={keepFocus}>
       <IconButton icon={Undo2} label="Undo" disabled={!s.model.canUndo()} onClick={() => s.undo()} />
       <IconButton icon={Redo2} label="Redo" disabled={!s.model.canRedo()} onClick={() => s.redo()} />
+      <IconButton icon={Paintbrush} label="Paint format" class={cx(s.painter && 'painting')} active={!!s.painter} onClick={() => s.pickPainter()} />
       <span class="sep" />
       <select class="select" aria-label="Number format" value={fmt} onChange={(e) => { s.setStyle('num_fmt', e.target.value); s.wrap.focus() }}>
         {formats.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
         {fmt === 'other' && <option value="other">Custom</option>}
+      </select>
+      <span class="sep" />
+      <select class="select tb-font" aria-label="Font" value={font} onChange={(e) => { s.setFont(e.target.value); s.wrap.focus() }}>
+        <option value="">Default</option>
+        {fonts.map((x) => <option key={x} value={x} style={{ fontFamily: x }}>{x}</option>)}
+        {font && !fonts.includes(font) && <option value={font}>{font}</option>}
+      </select>
+      <select class="select tb-size" aria-label="Font size" value={size} onChange={(e) => { s.setSize(+e.target.value); s.wrap.focus() }}>
+        {(sizes.includes(size) ? sizes : [...sizes, size].sort((a, b) => a - b)).map((n) => <option key={n} value={n}>{n}</option>)}
       </select>
       <span class="sep" />
       <IconButton icon={Bold} label="Bold" active={!!f.b} onClick={() => s.toggle('font.b')} />
@@ -53,10 +71,6 @@ function Toolbar({ s, onChart }) {
         <Swatches colors={markColors} clear="No fill" onPick={(c) => s.setStyle('fill.color', c || '')} />
       </Popover>
       <span class="sep" />
-      <IconButton icon={AlignLeft} label="Align left" active={align === 'left'} onClick={() => s.setStyle('alignment.horizontal', 'left')} />
-      <IconButton icon={AlignCenter} label="Centre" active={align === 'center'} onClick={() => s.setStyle('alignment.horizontal', 'center')} />
-      <IconButton icon={AlignRight} label="Align right" active={align === 'right'} onClick={() => s.setStyle('alignment.horizontal', 'right')} />
-      <span class="sep" />
       <Menu trigger={<IconButton icon={Grid2x2} label="Borders" />} items={[
         { label: 'All borders', onSelect: () => border('All') },
         { label: 'Outer border', onSelect: () => border('Outer') },
@@ -67,7 +81,23 @@ function Toolbar({ s, onChart }) {
         { label: 'Merge cells', disabled: rows * cols < 2, onSelect: () => s.act((m) => m.mergeCells(s.area())) },
         { label: 'Unmerge', onSelect: () => s.act((m) => m.unmergeCells(s.area())) },
       ]} />
+      <span class="sep" />
+      <IconButton icon={AlignLeft} label="Align left" active={align === 'left'} onClick={() => s.setStyle('alignment.horizontal', 'left')} />
+      <IconButton icon={AlignCenter} label="Centre" active={align === 'center'} onClick={() => s.setStyle('alignment.horizontal', 'center')} />
+      <IconButton icon={AlignRight} label="Align right" active={align === 'right'} onClick={() => s.setStyle('alignment.horizontal', 'right')} />
+      <Menu trigger={<IconButton icon={VIcon} label="Vertical align" />} items={[
+        { label: 'Top', icon: AlignVerticalJustifyStart, active: valign === 'top', onSelect: () => s.setStyle('alignment.vertical', 'top') },
+        { label: 'Middle', icon: AlignVerticalJustifyCenter, active: valign === 'center', onSelect: () => s.setStyle('alignment.vertical', 'center') },
+        { label: 'Bottom', icon: AlignVerticalJustifyEnd, active: valign === 'bottom', onSelect: () => s.setStyle('alignment.vertical', 'bottom') },
+      ]} />
+      <Menu trigger={<IconButton icon={WrapText} label="Text wrapping" />} items={[
+        { label: 'Overflow', active: wrapMode === 'overflow', onSelect: () => s.setWrapping('overflow') },
+        { label: 'Wrap', active: wrapMode === 'wrap', onSelect: () => s.setWrapping('wrap') },
+        { label: 'Clip', active: wrapMode === 'clip', onSelect: () => s.setWrapping('clip') },
+      ]} />
+      <span class="sep" />
       <IconButton icon={ChartColumn} label="Insert chart" onClick={onChart} />
+      <IconButton icon={Filter} label={s.filter && !s.view ? 'Remove filter' : 'Create a filter'} active={!!s.filter && !s.view} onClick={onFilter} />
     </div>
   )
 }
@@ -129,6 +159,9 @@ export default function SheetView({ id }) {
   const [chartEdit, setChartEdit] = useState(false) // its options panel is open
   const [history, setHistory] = useState(null) // the version panel, once asked for
   const [past, setPast] = useState(null) // { version, state }: a past version on screen
+  const [floating, setFloating] = useState(null) // a filter menu or dropdown list over the grid
+  const [dialog, setDialog] = useState(null) // 'sort' | 'find' | 'replace' | 'pivot' | 'colsize' | 'rowsize'
+  const [panel, setPanel] = useState(null) // 'validation' | 'cond' | 'pivot'
 
   useEffect(() => {
     if (!doc) refreshBoot()
@@ -153,6 +186,9 @@ export default function SheetView({ id }) {
     // Clicking a cell lets go of a selected chart.
     s.onGridDown = () => setChartSel(null)
     s.onToast = (text, kind) => toast(text, kind)
+    s.onWidget = (w) => setFloating(w)
+    // A link to a filter view (?fv=) opens it on this screen.
+    s.view = new URLSearchParams(location.search).get('fv')
     ctl.current = s
     s.open(wrap.current, canvas.current, scroll.current, spacer.current)
     bump((n) => n + 1) // draw the toolbar before this frame is painted
@@ -175,6 +211,13 @@ export default function SheetView({ id }) {
       el.setSelectionRange(el.value.length, el.value.length)
     }
   }, [editing])
+
+  // The pivot table editor opens by itself on a pivot table's sheet.
+  const pivot = live ? pivotOn(live.model, live.sheet, live, live.rev) : null
+  useEffect(() => {
+    if (pivot && live?.canEdit && !panel) setPanel('pivot')
+    if (!pivot && (panel === 'pivot' || panel === 'closed')) setPanel(null)
+  }, [pivot?.id, live?.sheet])
 
   const rename = useRef(debounce((d, title) => renameDoc(d, title), 500)).current
 
@@ -201,10 +244,12 @@ export default function SheetView({ id }) {
     const text = e.rows ? toCsv(values(live.model, live.sheet, 1, 1, e.rows, e.cols)) : ''
     download(new Blob([text], { type: 'text/csv;charset=utf-8' }), `${doc.title || 'Untitled'} - ${live.sheets[live.sheet]?.name || 'Sheet'}.csv`)
   }
-  const exportXlsx = () => {
+  const exportXlsx = async () => {
     try {
-      download(new Blob([toXlsx(live.model)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${doc.title || 'Untitled'}.xlsx`)
+      const { exportXlsx: toXlsx } = await import('./sheet-xlsx.js')
+      download(new Blob([await toXlsx(live.model)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${doc.title || 'Untitled'}.xlsx`)
     } catch (e) {
+      console.warn(e)
       toast("This spreadsheet couldn't be exported.", 'error')
     }
   }
@@ -229,6 +274,7 @@ export default function SheetView({ id }) {
   const newChart = () => {
     if (live.draft !== null) live.commit()
     setHistory(null)
+    setPanel(null)
     setChartSel(insertChart(live))
     setChartEdit(true)
   }
@@ -237,15 +283,42 @@ export default function SheetView({ id }) {
     setChartSel(null)
     wrap.current.focus()
   }
+  const focusGrid = () => wrap.current?.focus()
+  // The toolbar's filter button: on with the data around the selection, or off.
+  const toggleFilter = () => {
+    if (live.view) return openView(null)
+    if (live.filter) live.act((m) => removeFilter(m, live.sheet))
+    else live.act((m) => setFilter(m, live.sheet, dataBlock(m, live.sheet, live.sel)))
+    focusGrid()
+  }
+  const openView = (vid) => {
+    live.openView(vid)
+    const url = new URL(location.href)
+    if (vid) url.searchParams.set('fv', vid)
+    else url.searchParams.delete('fv')
+    window.history.replaceState(window.history.state, '', url)
+    focusGrid()
+  }
+  const copyViewLink = (v) => {
+    const url = new URL(location.href)
+    url.search = ''
+    url.searchParams.set('fv', v.id)
+    navigator.clipboard?.writeText(url.toString()).then(() => toast('Link to the filter view copied'), () => toast(url.toString()))
+  }
   const gridKeys = (e) => {
     if (e.target !== wrap.current || !live) return
     if (chart && (e.key === 'Delete' || e.key === 'Backspace') && live.canEdit) { e.preventDefault(); return dropChart() }
     if (chart && e.key === 'Escape') return setChartSel(null)
+    const mod = e.metaKey || e.ctrlKey
+    if (mod && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); return setDialog('find') }
+    if (mod && !e.shiftKey && e.key.toLowerCase() === 'h') { e.preventDefault(); return setDialog('replace') }
+    if (mod && e.shiftKey && e.key.toLowerCase() === 'f' && live.canEdit) { e.preventDefault(); return toggleFilter() }
     live.onKey(e)
   }
   const openHistory = async () => {
     const m = await import('./versions.jsx')
     setChartEdit(false)
+    setPanel(null)
     setHistory(() => m)
   }
   const HistoryPanel = history?.default
@@ -256,6 +329,19 @@ export default function SheetView({ id }) {
     await post(`/api/docs/${id}/versions/${version.id}/restore`)
     setPast(null)
   }
+  const openPanel = (p) => {
+    setHistory(null)
+    setChartEdit(false)
+    setPanel(p)
+  }
+
+  const side = HistoryPanel
+    ? <HistoryPanel doc={doc} viewing={past?.version.id || null} onView={(version, state) => setPast(version ? { version, state } : null)} onRestore={restore} onClose={() => { setHistory(null); setPast(null) }} />
+    : chartEdit && chart && live.canEdit ? <ChartPanel s={live} chart={chart} tick={tick} onClose={() => setChartEdit(false)} onDelete={dropChart} />
+      : live && panel === 'validation' ? <ValidationPanel s={live} tick={tick} onClose={() => { setPanel(null); focusGrid() }} />
+        : live && panel === 'cond' ? <CondPanel s={live} tick={tick} onClose={() => { setPanel(null); focusGrid() }} />
+          : live && panel === 'pivot' && pivot ? <PivotPanel s={live} pivot={pivot} tick={tick} onClose={() => { setPanel('closed'); focusGrid() }} />
+            : null
 
   return (
     <div class="sheet-view">
@@ -269,9 +355,10 @@ export default function SheetView({ id }) {
             <span class="save-state">{status}</span>
           </div>
           <MenuBar menus={sheetMenus({
-            doc, live, canEdit: !!live?.canEdit, past,
+            doc, live, canEdit: !!live?.canEdit, past, me,
             share: () => setShare(true), rename: () => titleInput.current?.select(), history: openHistory, exportXlsx, exportCsv,
-            trash: () => { trashDoc(doc); navigate('/docs') }, chart: newChart, addSheet, focusGrid: () => wrap.current?.focus(),
+            trash: () => { trashDoc(doc); navigate('/docs') }, chart: newChart, addSheet, focusGrid,
+            dialog: setDialog, panel: openPanel, toggleFilter, openView, newView: () => { const v = newView(live); if (v) openView(v) },
           })} />
         </div>
         <span class="grow" />
@@ -279,7 +366,8 @@ export default function SheetView({ id }) {
         <Button icon={Users} kind={doc.access === 'org' || doc.shares?.length ? 'default' : 'primary'} onClick={() => setShare(true)}>Share</Button>
       </div>
       {past && VersionBar && <VersionBar version={past.version} onBack={() => setPast(null)} onRestore={() => restore(past.version).then(() => toast('Version restored'), (e) => toast(e.message, 'error'))} />}
-      {!past && (live && live.canEdit ? <Toolbar s={live} tick={tick} onChart={newChart} /> : <div class="toolbar" style={{ minHeight: 43 }} />)}
+      {!past && (live && live.canEdit ? <Toolbar s={live} tick={tick} onChart={newChart} onFilter={toggleFilter} /> : <div class="toolbar" style={{ minHeight: 43 }} />)}
+      {!past && live?.view && <ViewBar s={live} tick={tick} onClose={() => openView(null)} onLink={copyViewLink} />}
       {!past && (
         <div class="formula-bar">
           <div class="ref">{ref}</div>
@@ -296,13 +384,15 @@ export default function SheetView({ id }) {
           <div class="grid-wrap" ref={wrap} tabIndex={0} onKeyDown={gridKeys}>
             <canvas ref={canvas} />
             <div class="grid-scroll" ref={scroll}><div ref={spacer} /></div>
-            {live && <ChartLayer s={live} tick={tick} selected={chartSel} onSelect={setChartSel} onEdit={(cid) => { setChartSel(cid); setHistory(null); setChartEdit(true) }} />}
+            {live && <ChartLayer s={live} tick={tick} selected={chartSel} onSelect={setChartSel} onEdit={(cid) => { setChartSel(cid); setHistory(null); setPanel(null); setChartEdit(true) }} />}
             {editing && (
               <input ref={cellInput} class="cell-editor" spellcheck={false} value={live.draft}
                 style={{ left: Math.max(rect.x, 46), top: Math.max(rect.y, 24), height: rect.h + 1, width: Math.max(rect.w + 1, Math.min(600, live.draft.length * 8 + 24)) }}
                 onInput={(e) => live.setDraft(e.target.value)}
                 onKeyDown={editKeys} />
             )}
+            {live && floating?.kind === 'filter' && <FilterMenu key={floating.col} s={live} col={floating.col} rect={floating.rect} onClose={() => { setFloating(null); focusGrid() }} />}
+            {live && floating?.kind === 'list' && live.canEdit && <ListMenu s={live} rect={floating.rect} onClose={() => { setFloating(null); focusGrid() }} />}
           </div>
           <div class="sheet-tabs">
             {sheets.map((sh, i) => sh.state === 'visible' && (
@@ -317,11 +407,13 @@ export default function SheetView({ id }) {
           </div>
           {past && <PastGrid id={id} me={me} title={doc.title} state={past.state} />}
         </div>
-        {HistoryPanel
-          ? <HistoryPanel doc={doc} viewing={past?.version.id || null} onView={(version, state) => setPast(version ? { version, state } : null)} onRestore={restore} onClose={() => { setHistory(null); setPast(null) }} />
-          : chartEdit && chart && live.canEdit && <ChartPanel s={live} chart={chart} tick={tick} onClose={() => setChartEdit(false)} onDelete={dropChart} />}
+        {side}
       </div>
       {share && <ShareDialog doc={doc} onClose={() => setShare(false)} />}
+      {live && dialog === 'sort' && <SortDialog s={live} onClose={() => { setDialog(null); focusGrid() }} />}
+      {live && (dialog === 'find' || dialog === 'replace') && <FindDialog s={live} replace={dialog === 'replace'} onClose={() => { setDialog(null); focusGrid() }} />}
+      {live && dialog === 'pivot' && <PivotCreate s={live} onClose={() => setDialog(null)} onMade={(made) => { live.useSheet(made.sheet); setPanel('pivot') }} />}
+      {live && (dialog === 'colsize' || dialog === 'rowsize') && <SizeDialog s={live} kind={dialog === 'colsize' ? 'col' : 'row'} onClose={() => { setDialog(null); focusGrid() }} />}
       {renaming && (
         <Modal title="Rename sheet" onClose={() => setRenaming(null)} footer={<><Button onClick={() => setRenaming(null)}>Cancel</Button><Button kind="primary" onClick={() => { live.act((m) => m.renameSheet(renaming.i, renaming.name.trim())); setRenaming(null) }}>Rename</Button></>}>
           <input class="input" autofocus value={renaming.name} onInput={(e) => setRenaming({ ...renaming, name: e.target.value })} onFocus={(e) => e.target.select()} />

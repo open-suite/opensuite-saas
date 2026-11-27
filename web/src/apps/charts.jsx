@@ -120,7 +120,7 @@ export function ChartLayer({ s, selected, onSelect, onEdit }) {
 
 // A text box that commits on Enter or when left, and is never overwritten
 // while someone is typing in it.
-function TextField({ value, onCommit, error, ...rest }) {
+export function TextField({ value, onCommit, error, ...rest }) {
   const [v, setV] = useState(value)
   const focused = useRef(false)
   useEffect(() => {

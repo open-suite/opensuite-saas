@@ -7,7 +7,6 @@
 // device copy and version, and Undo covers them. And because the data range
 // is a real formula, the engine itself keeps it pointing at the right cells
 // when rows or columns are inserted or a sheet is renamed.
-import { Model } from '@ironcalc/wasm-xlsx'
 import { newId } from '../lib/util.js'
 import { colName } from './sheet-data.js'
 
@@ -203,13 +202,4 @@ export function guessChart(s) {
   return { ref, headers, labels }
 }
 
-// A copy of the workbook as Excel should see it: without the hidden sheets.
-export function toXlsx(model) {
-  const copy = Model.fromBytes(model.toBytes(), 'en')
-  try {
-    for (const i of chartSheets(copy).reverse()) copy.deleteSheet(i)
-    return copy.toXlsx()
-  } finally {
-    copy.free()
-  }
-}
+export const chartSheetsOf = chartSheets

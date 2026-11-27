@@ -1,11 +1,14 @@
 // Spreadsheets, through the same engine and helpers as the spreadsheet
-// screen (apps/sheet-data.js, apps/sheet-charts.js). A write is one engine
-// diff, made on the workbook as the server's log has it, exactly like an
-// edit in the browser; the server orders it with everyone else's. Hidden
-// sheets (where charts are kept) are never shown or written.
+// screen (apps/sheet-data.js, apps/sheet-meta.js, apps/sheet-xlsx.js). A
+// write is one engine diff, made on the workbook as the server's log has it,
+// exactly like an edit in the browser; the server orders it with everyone
+// else's. Hidden sheets (where charts, filters and the like are kept) are
+// never shown or written as cells.
 import { Model } from '@ironcalc/wasm-xlsx'
-import { loadModel, xlsxSnapshot, addSheet, sheetText, colName, extent } from '../apps/sheet-data.js'
-import { parseRange, toXlsx } from '../apps/sheet-charts.js'
+import { loadModel, addSheet, sheetText, colName, extent, timezone } from '../apps/sheet-data.js'
+import { exportXlsx, importXlsx } from '../apps/sheet-xlsx.js'
+import { refreshPivots, readMeta } from '../apps/sheet-meta.js'
+import { applyOp, setupOf, visible, pick, area } from './sheet-ops.js'
 import { parseCsv, toCsv, csvSnapshot } from '../lib/csv.js'
 import { arg, frames, fromB64, toB64 } from './wire.js'
 
@@ -13,39 +16,16 @@ const MAX_CELLS = 200000
 
 function open(args, fn) {
   const m = loadModel(frames(args))
+  let out
   try {
-    return fn(m)
-  } finally {
+    out = fn(m)
+  } catch (e) {
     m.free()
+    throw e
   }
-}
-
-// The sheets people see, with their position in the workbook (`at`) and
-// among the visible ones (`index`).
-const visible = (m) => m.getWorksheetsProperties().map((sh, at) => ({ ...sh, at })).filter((sh) => sh.state === 'visible').map((sh, index) => ({ ...sh, index }))
-
-const names = (m) => visible(m).map((sh) => JSON.stringify(sh.name)).join(', ')
-
-// pick finds a sheet by name or by its position among the visible ones; none
-// given is the first.
-function pick(m, which) {
-  const shown = visible(m)
-  const sh = which == null ? shown[0]
-    : typeof which === 'number' ? shown[which]
-      : typeof which === 'string' ? shown.find((s) => s.name === which) || shown.find((s) => s.name.toLowerCase() === which.toLowerCase())
-        : null
-  if (!sh) throw new Error(`No sheet ${JSON.stringify(which)}. The sheets are ${names(m)}`)
-  return sh
-}
-
-// area reads "B2", "A1:C9" or "Sheet2!A1:C9" on sheet `sh` unless it names
-// another one.
-function area(m, text, sh, key) {
-  const ref = parseRange(m, text, sh.at)
-  if (!ref) throw new Error(`${key} must be a cell or range such as "B2" or "A1:C9", not ${JSON.stringify(text)}`)
-  const on = visible(m).find((s) => s.at === ref.sheet)
-  if (!on) throw new Error(`No sheet in ${JSON.stringify(text)}. The sheets are ${names(m)}`)
-  return { ...ref, sh: on }
+  if (out && typeof out.then === 'function') return out.finally(() => m.free())
+  m.free()
+  return out
 }
 
 const rangeText = (r) => `${colName(r.c1)}${r.r1}:${colName(r.c2)}${r.r2}`
@@ -58,8 +38,10 @@ function cellInput(v, r, c) {
   throw new Error(`The value for ${colName(c)}${r} must be a string, number, boolean or null`)
 }
 
-// written ends a write: the diff it made and the new search text.
+// written ends a write: the diff it made and the new search text. Pivot
+// tables are brought up to date first, as the spreadsheet screen does.
 function written(m) {
+  if (readMeta(m, 'pivot').length) refreshPivots(m)
   const diff = m.flushSendQueue()
   return { update: diff.length > 1 ? toB64(diff) : '', text: sheetText(m) }
 }
@@ -133,9 +115,26 @@ export const sheetOps = {
     return written(m)
   }),
 
-  'sheet.xlsx': (args) => open(args, (m) => ({ xlsx: toB64(toXlsx(m)) })),
+  // Everything about the sheets beyond their cells: frozen panes, filters,
+  // filter views, conditional formatting, data validation, pivot tables.
+  'sheet.setup': (args) => open(args, (m) => ({ sheets: setupOf(m) })),
 
-  'sheet.fromXlsx': (args) => snapshotted(xlsxSnapshot(fromB64(arg(args, 'xlsx', 'string')), arg(args, 'name', 'string', true) || 'Workbook')),
+  // A list of changes made as one edit; see sheet-ops.js for what each does.
+  'sheet.ops': (args) => open(args, (m) => {
+    const ops = arg(args, 'ops', 'array')
+    const results = ops.map((op, i) => {
+      try {
+        return applyOp(m, op, args.sheet == null ? undefined : args.sheet)
+      } catch (e) {
+        throw new Error(`ops[${i}] (${op?.op || 'no op'}): ${e.message}`)
+      }
+    })
+    return { ...written(m), results }
+  }),
+
+  'sheet.xlsx': (args) => open(args, async (m) => ({ xlsx: toB64(await exportXlsx(m)) })),
+
+  'sheet.fromXlsx': async (args) => snapshotted(await importXlsx(fromB64(arg(args, 'xlsx', 'string')), arg(args, 'name', 'string', true) || 'Workbook', timezone)),
 
   'sheet.fromCsv': (args) => snapshotted(csvSnapshot(arg(args, 'csv', 'string'), arg(args, 'name', 'string', true) || 'Workbook')),
 }

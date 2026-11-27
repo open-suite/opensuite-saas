@@ -1,3 +1,8 @@
+// Fonts offered by name; "Default" is the workbook's own (drawn in the app's font).
+export const fonts = ['Arial', 'Calibri', 'Cambria', 'Courier New', 'Georgia', 'Helvetica', 'Times New Roman', 'Trebuchet MS', 'Verdana']
+
+export const sizes = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48]
+
 // Number formats offered in the toolbar and Format > Number: [code, name, example].
 export const formats = [
   ['general', 'Automatic', ''],

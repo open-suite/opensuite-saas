@@ -39,18 +39,7 @@ export function loadModel(state, name) {
   return m
 }
 
-// xlsxSnapshot converts an Excel workbook to the engine's own format.
-export function xlsxSnapshot(bytes, name) {
-  let m
-  try {
-    m = Model.fromXlsx(bytes, name, 'en', tz, 'en')
-  } catch {
-    m = Model.fromXlsx(bytes, name, 'en', 'UTC', 'en')
-  }
-  const out = m.toBytes()
-  m.free()
-  return out
-}
+export const timezone = tz
 
 export function colName(c) {
   let s = ''

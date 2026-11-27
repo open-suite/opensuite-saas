@@ -1,0 +1,31 @@
+/* Spreadsheet dialogs and panels (sheet-panels.jsx). The side panels reuse
+   the chart panel's frame (charts.css). */
+.sp-float { position: absolute; z-index: 30; max-height: min(520px, calc(100% - 40px)); overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.sp-sec { display: flex; flex-direction: column; gap: 6px; padding: 6px 6px 8px; }
+.sp-h { font-size: 11.5px; font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; }
+.sp-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sp-row .select, .sp-row .input { flex: 1; min-width: 90px; width: auto; }
+.sp-lbl { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.sp-link { border: 0; background: transparent; padding: 0; color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.sp-values { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; padding: 2px 2px 2px 0; }
+.sp-val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-n { color: var(--faint); font-size: 12px; }
+.sp-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 6px 4px; border-top: 1px solid var(--line); }
+.sp-items { min-height: 110px; padding: 8px 10px; resize: vertical; font: inherit; }
+.sp-rules { display: flex; flex-direction: column; gap: 6px; }
+.sp-rule { display: flex; align-items: center; gap: 8px; padding: 7px 6px 7px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.sp-rule-what { flex: 1; min-width: 0; font-size: 13px; display: flex; flex-direction: column; }
+.sp-rule-range { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.sp-swatch { display: inline-grid; place-items: center; min-width: 44px; height: 26px; padding: 0 6px; border-radius: 5px; border: 1px solid var(--line); font-size: 12px; }
+.sp-swatch.big { width: 100%; height: 34px; font-size: 13px; }
+.sp-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.sp-chip { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 2px 2px 2px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); font-size: 13px; }
+.sp-note { font-size: 12.5px; color: var(--muted); }
+.sp-viewbar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px; flex: none; background: color-mix(in srgb, var(--ok) 13%, var(--bg)); border-bottom: 1px solid color-mix(in srgb, var(--ok) 40%, var(--line)); font-size: 13px; font-weight: 600; color: var(--ink); }
+.sp-viewbar .sp-viewname { width: 200px; height: 28px; font-weight: 600; }
+.sp-range { font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 500; }
+.sp-viewbar .sp-note { font-weight: 500; }
+@media (max-width: 900px) { .sp-viewbar .sp-note { display: none; } }
+.tb-font { max-width: 130px; }
+.tb-size { width: 64px !important; }
+.icon-btn.painting { background: var(--accent-soft); color: var(--accent); }
