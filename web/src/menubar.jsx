@@ -38,7 +38,7 @@
 // where it is (keepFocus), and while a menu is open the arrow keys, Enter and
 // Escape are caught before the editor sees them. Help > Search the menus, or
 // Alt+/ anywhere in the editor, finds any item by name.
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { Check, ChevronRight, Search } from 'lucide-preact'
 import { cx } from './lib/util.js'
 import { keepFocus } from './ui.jsx'
@@ -199,8 +199,9 @@ export function MenuBar({ menus: given, class: cls }) {
     return () => removeEventListener('keydown', k, true)
   })
 
-  // While a menu is open its keys come first, before the editor's.
-  useEffect(() => {
+  // While a menu is open its keys come first, before the editor's. A layout
+  // effect, so a key pressed straight after the click already goes to the menu.
+  useLayoutEffect(() => {
     if (open < 0) return
     const off = (e) => !ref.current?.contains(e.target) && close()
     const key = (e) => {

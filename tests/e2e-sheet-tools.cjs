@@ -77,6 +77,7 @@ async function selectRange(page, a, b) {
     await until(A, () => window.__sheet.style().font.b)
     if (!(await A.evaluate(() => document.activeElement?.classList.contains('grid-wrap')))) throw new Error('the grid lost focus after a menu search')
     await A.click('.mb-btn:text-is("File")')
+    await A.waitForSelector('.mb-btn.on:text-is("File")')
     await A.keyboard.press('ArrowRight')
     await A.waitForSelector('.mb-btn.on:text-is("Edit")')
     await A.keyboard.press('Escape')
@@ -174,7 +175,8 @@ async function selectRange(page, a, b) {
     const table = () => A.evaluate((s) => [1, 2, 3, 4, 5].map((r) => [1, 2].map((c) => window.__sheet.model.getFormattedCellValue(s, r, c)).join('=')).join(' '), pivotSheet)
     if ((await table()) !== 'Region=Sum of Amount East=7 North=15 South=32 Grand total=54') throw new Error('pivot table: ' + await table())
     await B.evaluate(() => window.__sheet.useSheet(0))
-    await B.click('.grid-scroll', { position: cell(1, 7) })
+    // Rows above are filtered or taller now, so the cell is chosen, not clicked.
+    await B.evaluate(() => { window.__sheet.wrap.focus(); window.__sheet.select(7, 1) })
     await B.keyboard.type('West\tFay\t9\n')
     await until(A, (s) => window.__sheet.model.getFormattedCellValue(s, 5, 1) === 'West' && window.__sheet.model.getFormattedCellValue(s, 6, 2) === '63', pivotSheet)
     ok('pivot table: sums by region, and a row the colleague adds shows up in it')
