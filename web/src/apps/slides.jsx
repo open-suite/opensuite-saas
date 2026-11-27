@@ -5,11 +5,11 @@ import { render } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import {
   ArrowLeft, Undo2, Redo2, Bold, Italic, Underline, Baseline, Link2, List, ListOrdered, AlignLeft, AlignCenter, AlignRight,
-  Type, Shapes, Square, Squircle, Circle, Minus, MoveRight, ImagePlus, Play, Users, MoreHorizontal, Printer, FileDown, FileUp, Trash2, FileX2,
+  Type, Shapes, Square, Squircle, Circle, Minus, MoveRight, ImagePlus, Play, Users, Trash2, FileX2,
   Plus, Copy, Scissors, ClipboardPaste, Files, LayoutTemplate, Palette, PaintBucket, PenLine, Layers, BringToFront, SendToBack, ArrowUp, ArrowDown,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
-  ChevronDown, Sparkles, AppWindow, StickyNote, Ban,
+  ChevronDown, Sparkles, AppWindow, Ban,
 } from 'lucide-preact'
 import './slides.css'
 import { user, docs, upsertDoc, toast, confirmed } from '../lib/store.js'
@@ -27,6 +27,8 @@ import { Deck, prewarm, uploadImage, imageData } from './slides-core.js'
 import { isBlank } from './slides-text.js'
 import { SlideView } from './slides-render.jsx'
 import { Show, Presenter } from './slides-show.jsx'
+import { slideMenus } from './slides-menus.jsx'
+import { MenuBar } from '../menubar.jsx'
 
 export { prewarm }
 
@@ -773,6 +775,7 @@ export default function SlidesView({ id }) {
   const [menu, setMenu] = useState(null)
   const [notes, setNotes] = useState(true)
   const ui = useRef({})
+  const titleInput = useRef()
   const me = user.value
   const presenter = useRef(new URLSearchParams(location.search).has('presenter')).current
 
@@ -923,11 +926,20 @@ export default function SlidesView({ id }) {
 
   return (
     <div class={cx('doc-view sl-view', !canEdit && 'readonly')}>
-      <div class="doc-bar">
+      <div class="doc-bar with-menus">
         <IconButton icon={ArrowLeft} label="All docs" onClick={() => navigate('/docs')} />
-        <input class="doc-title" aria-label="Title" placeholder="Untitled" value={title} disabled={doc.role === 'view'}
-          onInput={(e) => { upsertDoc({ ...doc, title: e.target.value }); rename(doc, e.target.value) }} />
-        <span class="save-state">{status}</span>
+        <div class="doc-head">
+          <div class="doc-head-top">
+            <input class="doc-title" aria-label="Title" placeholder="Untitled" value={title} disabled={doc.role === 'view'} ref={titleInput}
+              onInput={(e) => { upsertDoc({ ...doc, title: e.target.value }); rename(doc, e.target.value) }} />
+            <span class="save-state">{status}</span>
+          </div>
+          <MenuBar menus={slideMenus({
+            doc, deck, canEdit, notes, clip,
+            share: () => setShare(true), rename: () => titleInput.current?.select(), print: () => printDeck(deck), exportPptx, importPptx,
+            trash: () => { trashDoc(doc); navigate('/docs') }, present, toggleNotes: () => setNotes(!notes), image: () => pickImage(), copy: copyNow,
+          })} />
+        </div>
         <span class="grow" />
         <span class="presence">{others.slice(0, 5).map((u) => <span key={u.id} title={u.name}><Avatar name={u.name} id={u.id} size={28} /></span>)}</span>
         <span class="sl-present">
@@ -940,15 +952,6 @@ export default function SlidesView({ id }) {
           ]} />
         </span>
         <Button icon={Users} kind={doc.access === 'org' || doc.shares?.length ? 'default' : 'primary'} onClick={() => setShare(true)}>Share</Button>
-        <Menu align="right" trigger={<IconButton icon={MoreHorizontal} label="More" />} items={[
-          { label: 'Print or save as PDF', icon: Printer, onSelect: () => printDeck(deck) },
-          { label: 'Download as PowerPoint (.pptx)', icon: FileDown, onSelect: exportPptx },
-          canEdit && { label: 'Add slides from PowerPoint…', icon: FileUp, onSelect: importPptx },
-          { divider: true },
-          { label: notes ? 'Hide speaker notes' : 'Show speaker notes', icon: StickyNote, onSelect: () => setNotes(!notes) },
-          doc.role === 'owner' && { divider: true },
-          doc.role === 'owner' && { label: 'Move to trash', icon: Trash2, danger: true, onSelect: () => { trashDoc(doc); navigate('/docs') } },
-        ]} />
       </div>
       {deck && canEdit && <Toolbar deck={deck} tick={tick} onImage={pickImage} />}
       <div class="sl-body">

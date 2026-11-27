@@ -371,7 +371,7 @@ const painted = (sel) => { const el = document.querySelector(sel); return !!el &
       await A.waitForTimeout(600)
       await B.goto(A.url())
       await B.waitForSelector('.toolbar .select')
-      await A.click('.doc-bar [aria-label="More"]')
+      await A.click('.menubar >> text=File')
       await A.click('.menu >> text=Version history')
       await A.click('.versions >> text=Name this version')
       await A.fill('.modal input', 'Baseline')
@@ -455,8 +455,8 @@ const painted = (sel) => { const el = document.querySelector(sel); return !!el &
 
       // Inserting a row above the data moves the chart's range with it.
       await A.click('.sheet-main > .grid-wrap .grid-scroll', { position: cell(1, 1) })
-      await A.click('[aria-label="Rows"]')
-      await A.click('.menu >> text=Insert row above')
+      await A.click('.menubar >> text=Insert')
+      await A.click('.menu >> text=Row above')
       await A.click('.chart')
       await A.dblclick('.chart')
       await A.waitForFunction(() => document.querySelector('[aria-label="Data range"]')?.value === 'A2:C7', null, { timeout: 5000 })

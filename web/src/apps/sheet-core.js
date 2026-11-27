@@ -798,6 +798,36 @@ export class Sheet {
     this.act((m) => m.rangeClearContents(this.sheet, r1, c1, r2, c2))
   }
 
+  clearFormatting() {
+    const { r1, c1, r2, c2 } = this.sel
+    this.act((m) => m.rangeClearFormatting(this.sheet, r1, c1, Math.min(r2, MAXR), Math.min(c2, MAXC)))
+  }
+
+  selectAll() {
+    this.sel = { row: 1, col: 1, r1: 1, c1: 1, r2: MAXR, c2: MAXC }
+    this.pushSelection()
+    this.draw()
+    this.onChange()
+  }
+
+  // Edit > Paste: the system clipboard, read on request (the browser asks
+  // first). Our own copy keeps formulas and formatting, as Ctrl+V does.
+  async pasteFromSystem() {
+    let text = ''
+    try {
+      text = await navigator.clipboard.readText()
+    } catch {
+      return this.onToast?.(`Use ${/Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+'}V to paste.`)
+    }
+    if (!this.model || !this.canEdit) return
+    this.pushSelection()
+    const clip = this.clip
+    if (clip && clip.csv === text) {
+      this.act((m) => m.pasteFromClipboard(clip.sheet, clip.range, clip.data, clip.cut))
+      if (clip.cut) this.clip = null
+    } else if (text) this.act((m) => m.pasteCsvText(this.area(), text))
+  }
+
   undo() {
     if (this.model?.canUndo()) this.act((m) => m.undo())
   }
@@ -989,7 +1019,12 @@ export class Sheet {
       else if (key === 'b') { e.preventDefault(); this.toggle('font.b') }
       else if (key === 'i') { e.preventDefault(); this.toggle('font.i') }
       else if (key === 'u') { e.preventDefault(); this.toggle('font.u') }
-      else if (key === 'a') { e.preventDefault(); this.sel = { row: 1, col: 1, r1: 1, c1: 1, r2: MAXR, c2: MAXC }; this.pushSelection(); this.draw(); this.onChange() }
+      else if (key === 'x' && e.shiftKey) { e.preventDefault(); this.toggle('font.strike') }
+      else if (key === 'l' && e.shiftKey) { e.preventDefault(); this.setStyle('alignment.horizontal', 'left') }
+      else if (key === 'e' && e.shiftKey) { e.preventDefault(); this.setStyle('alignment.horizontal', 'center') }
+      else if (key === 'r' && e.shiftKey) { e.preventDefault(); this.setStyle('alignment.horizontal', 'right') }
+      else if (k === '\\') { e.preventDefault(); this.clearFormatting() }
+      else if (key === 'a') { e.preventDefault(); this.selectAll() }
       else if (k.startsWith('Arrow')) {
         e.preventDefault()
         try {

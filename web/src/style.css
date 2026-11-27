@@ -178,6 +178,31 @@ kbd { font: 11px var(--mono); color: var(--faint); margin-left: auto; padding-le
 .menu-item.danger { color: var(--danger); }
 .menu-item:disabled { opacity: 0.45; cursor: default; }
 .menu-sep { height: 1px; margin: 5px 0; background: var(--line); }
+.menu-item.hot { background: var(--sunken); }
+
+/* --- editor menu bar (menubar.jsx) ------------------------------------- */
+.menubar { display: flex; align-items: center; gap: 0; height: 24px; margin-left: 2px; }
+.mb-top { position: relative; display: inline-flex; }
+.mb-btn { height: 24px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--ink-2, var(--ink)); font-size: 13.5px; }
+.mb-btn:hover, .mb-btn.on { background: var(--sunken); color: var(--ink); }
+.mb-drop { top: calc(100% + 3px); left: 0; min-width: 260px; max-height: calc(100vh - 140px); overflow: auto; }
+.mb-item-wrap { position: relative; }
+.mb-sub { top: -6px; left: calc(100% + 2px); min-width: 220px; }
+.mb-icon { width: 16px; display: inline-grid; place-items: center; flex: none; color: var(--muted); }
+.mb-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mb-more { margin-left: auto; color: var(--faint); }
+.mb-search { width: 360px; }
+.mb-search-box { display: flex; align-items: center; gap: 8px; padding: 4px 8px 6px; color: var(--muted); }
+.mb-search-box input { flex: 1; height: 30px; border: 1px solid var(--line); border-radius: 7px; padding: 0 8px; background: var(--bg); color: var(--ink); outline: none; }
+.mb-search-box input:focus { border-color: var(--accent); }
+.mb-search-box kbd { margin-left: 0; padding-left: 0; }
+.mb-path { display: block; font-size: 11.5px; color: var(--faint); }
+.mb-search .menu-item { height: auto; min-height: 32px; padding-top: 4px; padding-bottom: 4px; }
+.mb-none { padding: 8px 10px; color: var(--muted); font-size: 13px; }
+.doc-head { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 0 1 auto; }
+.doc-head-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.doc-bar.with-menus { height: 62px; align-items: center; }
+.doc-bar.with-menus .doc-title { height: 30px; }
 .menu-head { padding: 6px 10px 4px; font-size: 11.5px; font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; }
 
 /* --- modal ------------------------------------------------------------ */

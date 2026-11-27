@@ -327,8 +327,9 @@ async function sibling(page, url, opened) {
         else click.call(this)
       }
     })
-    await A.click('[aria-label="More"]')
-    await A.click('.menu >> text=Download as PowerPoint')
+    await A.click('.menubar >> text=File')
+    await A.hover('.menu >> text=Download')
+    await A.click('.menu >> text=Microsoft PowerPoint')
     await A.waitForFunction(() => window.__saved, null, { timeout: 20000 })
     const b64 = await A.evaluate(async () => {
       const buf = new Uint8Array(await window.__saved.blob.arrayBuffer())
@@ -349,7 +350,7 @@ async function sibling(page, url, opened) {
     const [chooser] = await Promise.all([
       A.waitForEvent('filechooser'),
       (async () => {
-        await A.click('[aria-label="More"]')
+        await A.click('.menubar >> text=File')
         await A.click('.menu >> text=Add slides from PowerPoint')
       })(),
     ])

@@ -1,37 +1,28 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import {
   ArrowLeft, Undo2, Redo2, Bold, Italic, Underline, Strikethrough, Baseline, PaintBucket, AlignLeft, AlignCenter, AlignRight,
-  Grid2x2, Users, MoreHorizontal, FileDown, Trash2, Plus, FileX2, Rows3, Columns3, Merge, Pencil, ChartColumn, History,
+  Grid2x2, Users, Trash2, Plus, FileX2, Merge, Pencil, ChartColumn,
 } from 'lucide-preact'
 import './sheet.css'
 import { user, docs, upsertDoc, toast, confirmed } from '../lib/store.js'
 import { navigate } from '../lib/router.js'
 import { post, refreshBoot } from '../lib/api.js'
 import { renameDoc, trashDoc } from '../lib/docs.js'
+import { toCsv } from '../lib/csv.js'
 import { cx, debounce, download } from '../lib/util.js'
 import { Avatar, Button, Empty, IconButton, Menu, Modal, Popover, Swatches, inkColors, markColors, keepFocus } from '../ui.jsx'
+import { MenuBar } from '../menubar.jsx'
 import { ShareDialog } from './docs.jsx'
 import { Sheet, colName, prewarmSheets } from './sheet-core.js'
 import { toXlsx } from './sheet-charts.js'
-import { addSheet as appendSheet } from './sheet-data.js'
+import { addSheet as appendSheet, extent, values } from './sheet-data.js'
+import { formats } from './sheet-format.js'
+import { sheetMenus } from './sheet-menus.jsx'
 import { ChartLayer, ChartPanel, insertChart, readCharts, removeChart } from './charts.jsx'
 
 export { xlsxToSnapshot, csvToSnapshot } from './sheet-core.js'
 
 export const prewarm = () => prewarmSheets(docs.value.filter((d) => d.kind === 'sheet' && !d.trashed).slice(0, 8).map((d) => d.id))
-
-const formats = [
-  ['general', 'Automatic'],
-  ['#,##0.00', 'Number'],
-  ['0%', 'Percent'],
-  ['0.00%', 'Percent (0.00)'],
-  ['"€"#,##0.00', 'Euro'],
-  ['"$"#,##0.00', 'Dollar'],
-  ['"£"#,##0.00', 'Pound'],
-  ['dd/mm/yyyy', 'Date'],
-  ['yyyy-mm-dd', 'Date (ISO)'],
-  ['hh:mm', 'Time'],
-]
 
 function Toolbar({ s, onChart }) {
   const st = s.style()
@@ -76,19 +67,6 @@ function Toolbar({ s, onChart }) {
         { label: 'Merge cells', disabled: rows * cols < 2, onSelect: () => s.act((m) => m.mergeCells(s.area())) },
         { label: 'Unmerge', onSelect: () => s.act((m) => m.unmergeCells(s.area())) },
       ]} />
-      <Menu trigger={<IconButton icon={Rows3} label="Rows" />} items={[
-        { label: 'Insert row above', onSelect: () => s.act((m) => m.insertRows(s.sheet, s.sel.r1, 1)) },
-        { label: 'Insert row below', onSelect: () => s.act((m) => m.insertRows(s.sheet, s.sel.r2 + 1, 1)) },
-        { divider: true },
-        { label: rows > 1 ? `Delete ${rows} rows` : 'Delete row', danger: true, disabled: rows > 5000, onSelect: () => s.act((m) => m.deleteRows(s.sheet, s.sel.r1, rows)) },
-      ]} />
-      <Menu trigger={<IconButton icon={Columns3} label="Columns" />} items={[
-        { label: 'Insert column left', onSelect: () => s.act((m) => m.insertColumns(s.sheet, s.sel.c1, 1)) },
-        { label: 'Insert column right', onSelect: () => s.act((m) => m.insertColumns(s.sheet, s.sel.c2 + 1, 1)) },
-        { divider: true },
-        { label: cols > 1 ? `Delete ${cols} columns` : 'Delete column', danger: true, disabled: cols > 500, onSelect: () => s.act((m) => m.deleteColumns(s.sheet, s.sel.c1, cols)) },
-      ]} />
-      <span class="sep" />
       <IconButton icon={ChartColumn} label="Insert chart" onClick={onChart} />
     </div>
   )
@@ -141,6 +119,7 @@ export default function SheetView({ id }) {
   const spacer = useRef()
   const cellInput = useRef()
   const barInput = useRef()
+  const titleInput = useRef()
   const ctl = useRef(null)
   // `tick` changes whenever the sheet does; see the same note in editor.jsx.
   const [tick, bump] = useState(0)
@@ -173,6 +152,7 @@ export default function SheetView({ id }) {
     }
     // Clicking a cell lets go of a selected chart.
     s.onGridDown = () => setChartSel(null)
+    s.onToast = (text, kind) => toast(text, kind)
     ctl.current = s
     s.open(wrap.current, canvas.current, scroll.current, spacer.current)
     bump((n) => n + 1) // draw the toolbar before this frame is painted
@@ -216,6 +196,11 @@ export default function SheetView({ id }) {
   const others = live ? [...new Map([...live.peers.values()].map((p) => [p.u.id, p.u])).values()] : []
   const status = !live ? '' : !live.online ? 'Offline · saved on this device' : live.saved ? 'Saved' : 'Saving…'
   const ref = live ? (live.sel.r1 === live.sel.r2 && live.sel.c1 === live.sel.c2 ? colName(live.sel.col) + live.sel.row : `${colName(live.sel.c1)}${live.sel.r1}:${colName(Math.min(live.sel.c2, 16384))}${Math.min(live.sel.r2, 1048576)}`) : ''
+  const exportCsv = () => {
+    const e = extent(live.model, live.sheet)
+    const text = e.rows ? toCsv(values(live.model, live.sheet, 1, 1, e.rows, e.cols)) : ''
+    download(new Blob([text], { type: 'text/csv;charset=utf-8' }), `${doc.title || 'Untitled'} - ${live.sheets[live.sheet]?.name || 'Sheet'}.csv`)
+  }
   const exportXlsx = () => {
     try {
       download(new Blob([toXlsx(live.model)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${doc.title || 'Untitled'}.xlsx`)
@@ -274,21 +259,24 @@ export default function SheetView({ id }) {
 
   return (
     <div class="sheet-view">
-      <div class="doc-bar">
+      <div class="doc-bar with-menus">
         <IconButton icon={ArrowLeft} label="All docs" onClick={() => navigate('/docs')} />
-        <input class="doc-title" aria-label="Title" placeholder="Untitled" value={doc.title} disabled={!canEdit}
-          onInput={(e) => { upsertDoc({ ...doc, title: e.target.value }); rename(doc, e.target.value) }}
-          onKeyDown={(e) => e.key === 'Enter' && wrap.current.focus()} />
-        <span class="save-state">{status}</span>
+        <div class="doc-head">
+          <div class="doc-head-top">
+            <input class="doc-title" aria-label="Title" placeholder="Untitled" value={doc.title} disabled={!canEdit} ref={titleInput}
+              onInput={(e) => { upsertDoc({ ...doc, title: e.target.value }); rename(doc, e.target.value) }}
+              onKeyDown={(e) => e.key === 'Enter' && wrap.current.focus()} />
+            <span class="save-state">{status}</span>
+          </div>
+          <MenuBar menus={sheetMenus({
+            doc, live, canEdit: !!live?.canEdit, past,
+            share: () => setShare(true), rename: () => titleInput.current?.select(), history: openHistory, exportXlsx, exportCsv,
+            trash: () => { trashDoc(doc); navigate('/docs') }, chart: newChart, addSheet, focusGrid: () => wrap.current?.focus(),
+          })} />
+        </div>
         <span class="grow" />
         <span class="presence">{others.slice(0, 5).map((u) => <span key={u.id} title={u.name}><Avatar name={u.name} id={u.id} size={28} /></span>)}</span>
         <Button icon={Users} kind={doc.access === 'org' || doc.shares?.length ? 'default' : 'primary'} onClick={() => setShare(true)}>Share</Button>
-        <Menu align="right" trigger={<IconButton icon={MoreHorizontal} label="More" />} items={[
-          canEdit && { label: 'Version history', icon: History, disabled: !live, onSelect: openHistory },
-          { label: 'Download as Excel (.xlsx)', icon: FileDown, disabled: !live, onSelect: exportXlsx },
-          doc.role === 'owner' && { divider: true },
-          doc.role === 'owner' && { label: 'Move to trash', icon: Trash2, danger: true, onSelect: () => { trashDoc(doc); navigate('/docs') } },
-        ]} />
       </div>
       {past && VersionBar && <VersionBar version={past.version} onBack={() => setPast(null)} onRestore={() => restore(past.version).then(() => toast('Version restored'), (e) => toast(e.message, 'error'))} />}
       {!past && (live && live.canEdit ? <Toolbar s={live} tick={tick} onChart={newChart} /> : <div class="toolbar" style={{ minHeight: 43 }} />)}

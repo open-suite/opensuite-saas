@@ -71,6 +71,28 @@ export function addSheet(m, name) {
   if (!all.some((sh) => sh.name === name)) m.renameSheet(all.length - 1, name)
 }
 
+// extent is where a sheet's data ends. The engine lists rows one column at a
+// time, so rows are found in the columns the search text reads (sheetText),
+// and each is then followed to its last cell.
+export function extent(m, s) {
+  const rows = new Set()
+  for (let c = 1; c <= 60; c++) for (const r of m.getRowsWithData(s, c)) rows.add(r)
+  let cols = 0
+  for (const r of rows) cols = Math.max(cols, m.getLastNonEmptyInRowBeforeColumn(s, r, 16385) ?? 0)
+  return { rows: rows.size ? Math.max(...rows) : 0, cols }
+}
+
+// values is a block of cells as shown, row by row.
+export function values(m, s, r1, c1, r2, c2) {
+  const out = []
+  for (let r = r1; r <= r2; r++) {
+    const row = []
+    for (let c = c1; c <= c2; c++) row.push(m.getFormattedCellValue(s, r, c))
+    out.push(row)
+  }
+  return out
+}
+
 // sheetText is the workbook as plain text, for the search index. Hidden
 // sheets (where charts are stored) are left out.
 export function sheetText(m) {

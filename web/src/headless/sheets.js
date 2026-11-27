@@ -4,7 +4,7 @@
 // edit in the browser; the server orders it with everyone else's. Hidden
 // sheets (where charts are kept) are never shown or written.
 import { Model } from '@ironcalc/wasm-xlsx'
-import { loadModel, xlsxSnapshot, addSheet, sheetText, colName } from '../apps/sheet-data.js'
+import { loadModel, xlsxSnapshot, addSheet, sheetText, colName, extent } from '../apps/sheet-data.js'
 import { parseRange, toXlsx } from '../apps/sheet-charts.js'
 import { parseCsv, toCsv, csvSnapshot } from '../lib/csv.js'
 import { arg, frames, fromB64, toB64 } from './wire.js'
@@ -46,17 +46,6 @@ function area(m, text, sh, key) {
   const on = visible(m).find((s) => s.at === ref.sheet)
   if (!on) throw new Error(`No sheet in ${JSON.stringify(text)}. The sheets are ${names(m)}`)
   return { ...ref, sh: on }
-}
-
-// extent is where a sheet's data ends. The engine lists rows one column at a
-// time, so rows are found in the columns the search text reads (sheetText),
-// and each is then followed to its last cell.
-function extent(m, s) {
-  const rows = new Set()
-  for (let c = 1; c <= 60; c++) for (const r of m.getRowsWithData(s, c)) rows.add(r)
-  let cols = 0
-  for (const r of rows) cols = Math.max(cols, m.getLastNonEmptyInRowBeforeColumn(s, r, 16385) ?? 0)
-  return { rows: rows.size ? Math.max(...rows) : 0, cols }
 }
 
 const rangeText = (r) => `${colName(r.c1)}${r.r1}:${colName(r.c2)}${r.r2}`
